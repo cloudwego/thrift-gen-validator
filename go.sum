@@ -1,0 +1,4 @@
+code.byted.org/thriftgo/thriftgo v0.0.26-alpha.1.0.20210617091821-b22aca873017 h1:z4u8JqZS8wA3fVys2R9E24Wg31a7ksC6vn+mVUpw6Fs=
+code.byted.org/thriftgo/thriftgo v0.0.26-alpha.1.0.20210617091821-b22aca873017/go.mod h1:dad/TGQk2B3tS00ez/sO0dYBpdkMGiHhgp5kke78RZk=
+github.com/apache/thrift v0.13.0 h1:5hryIiq9gtn+MiLVn0wP37kb/uTeRZgN08WoCsAhIhI=
+github.com/apache/thrift v0.13.0/go.mod h1:cp2SuWMxlEZw2r+iP2GNCdIi4C1qmUzdZFSVb+bacwQ=
