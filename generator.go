@@ -541,9 +541,9 @@ func (g *generator) generateBinaryValidation(vc *ValidateContext) error {
 			} else {
 				source = vc.GenID("_src")
 				if vc.TypeID == "String" || rule.Annotation == parser.BinaryAnnotation.Pattern {
-					g.writeLinef("%s := %s\n", source, strconv.Quote(vt.TypedValue.Binary))
+					g.writeLine(source + " := \"" + vt.TypedValue.Binary + "\"")
 				} else {
-					g.writeLinef("%s := []byte(%s)\n", source, strconv.Quote(vt.TypedValue.Binary))
+					g.writeLine(source + " := []byte(\"" + vt.TypedValue.Binary + "\")")
 				}
 			}
 		case parser.BinaryAnnotation.MinLen, parser.BinaryAnnotation.MaxLen:
@@ -943,7 +943,7 @@ func (g *generator) generateSlice(st *golang.StructLike, name string, typeID str
 					source = "*" + source
 				}
 			} else {
-				source = strconv.Quote(val.TypedValue.Binary)
+				source = "\"" + val.TypedValue.Binary + "\""
 			}
 			vs = append(vs, typeid2go[typeID]+"("+source+")")
 		}
@@ -957,7 +957,7 @@ func (g *generator) generateSlice(st *golang.StructLike, name string, typeID str
 					source = "*" + source
 				}
 			} else {
-				source = "[]byte(" + strconv.Quote(val.TypedValue.Binary) + ")"
+				source = "[]byte(\"" + val.TypedValue.Binary + "\")"
 			}
 			vs = append(vs, typeid2go[typeID]+"("+source+")")
 		}
@@ -982,7 +982,7 @@ func (g *generator) generateFunction(st *golang.StructLike, f *parser.ToolFuncti
 		var args []string
 		for _, arg := range f.Arguments {
 			if arg.ValueType == parser.BinaryValue {
-				args = append(args, strconv.Quote(arg.TypedValue.Binary))
+				args = append(args, "\""+arg.TypedValue.Binary+"\"")
 			} else if arg.ValueType == parser.FieldReferenceValue {
 				f := st.Field(arg.TypedValue.FieldReference.Name)
 				reference := "p." + f.GoName().String()
