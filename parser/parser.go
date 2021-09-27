@@ -1,11 +1,11 @@
 // Copyright 2021 CloudWeGo Authors
-// 
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 //     http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -17,6 +17,7 @@ package parser
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/cloudwego/thriftgo/generator/golang"
 	tp "github.com/cloudwego/thriftgo/parser"
@@ -33,7 +34,14 @@ func NewParser(cu *golang.CodeUtils) *Parser {
 func (p *Parser) Parse(st *tp.StructLike) (map[*tp.Field]*Validation, error) {
 	ret := make(map[*tp.Field]*Validation)
 	for _, f := range st.GetFields() {
-		v, err := p.parseField(st, f.Type, f.GetAnnotations())
+		annotations := f.GetAnnotations()
+		var validAnnotations []*tp.Annotation
+		for _, anno := range annotations {
+			if strings.HasPrefix(anno.Key, "vt.") {
+				validAnnotations = append(validAnnotations, anno)
+			}
+		}
+		v, err := p.parseField(st, f.Type, validAnnotations)
 		if err != nil {
 			return nil, fmt.Errorf("[annotation parser] parse %s's field %s failed: %w", st.Name, f.Name, err)
 		}
@@ -478,7 +486,7 @@ func (p *Parser) parseList(st *tp.StructLike, elemType *tp.Type, annotations []*
 	return validation, nil
 }
 
-func (p *Parser) parseMap(st *tp.StructLike, keyType *tp.Type, valType *tp.Type, annotations []*tp.Annotation) (*Validation, error) {
+func (p *Parser) parseMap(st *tp.StructLike, keyType, valType *tp.Type, annotations []*tp.Annotation) (*Validation, error) {
 	validation := &Validation{ValidationType: MapValidation}
 	specifiedKeys := []string{
 		MapAnnotation.MinPairs,

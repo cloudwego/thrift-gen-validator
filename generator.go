@@ -877,7 +877,7 @@ func (g *generator) generateMapValidation(vc *ValidateContext) error {
 	return nil
 }
 
-func (g *generator) generateSlice(st *golang.StructLike, name string, typeID string, vals []*parser.ValidationValue) error {
+func (g *generator) generateSlice(st *golang.StructLike, name, typeID string, vals []*parser.ValidationValue) error {
 	if len(vals) == 0 {
 		return errors.New("empty validation values")
 	}

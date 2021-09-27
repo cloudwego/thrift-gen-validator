@@ -295,6 +295,7 @@ func Size(size int) func(*Function) error {
 		return nil
 	}
 }
+
 func (p *Function) Init(options ...func(*Function) error) error {
 	var (
 		max                  token32
