@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package validator
 
 import (
 	"bytes"
@@ -30,6 +30,8 @@ import (
 	"github.com/cloudwego/thriftgo/plugin"
 	"github.com/cloudwego/thriftgo/semantic"
 )
+
+var Version string
 
 type generator struct {
 	*bytes.Buffer

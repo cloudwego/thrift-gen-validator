@@ -14,6 +14,12 @@
 
 package main
 
+import "github.com/cloudwego/thrift-gen-validator/validator"
+
+func init() {
+	validator.Version = Version
+}
+
 const (
 	Version = "v0.1.0"
 )

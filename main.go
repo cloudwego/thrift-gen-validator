@@ -20,6 +20,7 @@ import (
 	"os"
 
 	"github.com/cloudwego/thrift-gen-validator/config"
+	"github.com/cloudwego/thrift-gen-validator/validator"
 	"github.com/cloudwego/thriftgo/plugin"
 )
 
@@ -55,5 +56,5 @@ func main() {
 		println("Failed to unmarshal plugin parameters:", err.Error())
 		os.Exit(1)
 	}
-	os.Exit(Run(req, &cfg))
+	os.Exit(validator.Run(req, &cfg))
 }
