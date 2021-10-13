@@ -98,7 +98,7 @@ func (p *Parser) parseEnum(st *tp.StructLike, annotations []*tp.Annotation) (*Va
 			if value == nil {
 				value, err = getFunctionValidation(st, annoVal)
 				if err != nil {
-					return nil, err
+					p.cu.Warn(fmt.Errorf("%s parse as a function failed: %w", annoVal, err))
 				}
 			}
 			if value == nil {
@@ -156,7 +156,7 @@ func (p *Parser) parseBool(st *tp.StructLike, annotations []*tp.Annotation) (*Va
 			if value == nil {
 				value, err = getFunctionValidation(st, annoVal)
 				if err != nil {
-					return nil, err
+					p.cu.Warn(fmt.Errorf("%s parse as a function failed: %w", annoVal, err))
 				}
 			}
 			if value == nil {
@@ -211,7 +211,7 @@ func (p *Parser) parseInt(st *tp.StructLike, annotations []*tp.Annotation) (*Val
 			if value == nil {
 				value, err = getFunctionValidation(st, annoVal)
 				if err != nil {
-					return nil, err
+					p.cu.Warn(fmt.Errorf("%s parse as a function failed: %w", annoVal, err))
 				}
 			}
 			if value == nil {
@@ -286,7 +286,7 @@ func (p *Parser) parseDouble(st *tp.StructLike, annotations []*tp.Annotation) (*
 			if value == nil {
 				value, err = getFunctionValidation(st, annoVal)
 				if err != nil {
-					return nil, err
+					p.cu.Warn(fmt.Errorf("%s parse as a function failed: %w", annoVal, err))
 				}
 			}
 			if value == nil {
@@ -364,7 +364,7 @@ func (p *Parser) parseBinary(st *tp.StructLike, annotations []*tp.Annotation) (*
 			if value == nil {
 				value, err = getFunctionValidation(st, annoVal)
 				if err != nil {
-					return nil, err
+					p.cu.Warn(fmt.Errorf("%s parse as a function failed: %w", annoVal, err))
 				}
 			}
 			if value == nil {
@@ -445,7 +445,7 @@ func (p *Parser) parseList(st *tp.StructLike, elemType *tp.Type, annotations []*
 			if value == nil {
 				value, err = getFunctionValidation(st, annoVal)
 				if err != nil {
-					return nil, err
+					p.cu.Warn(fmt.Errorf("%s parse as a function failed: %w", annoVal, err))
 				}
 			}
 			if value == nil {
@@ -521,7 +521,7 @@ func (p *Parser) parseMap(st *tp.StructLike, keyType, valType *tp.Type, annotati
 			if value == nil {
 				value, err = getFunctionValidation(st, annoVal)
 				if err != nil {
-					return nil, err
+					p.cu.Warn(fmt.Errorf("%s parse as a function failed: %w", annoVal, err))
 				}
 			}
 			if value == nil {
@@ -600,7 +600,7 @@ func (p *Parser) parseStruct(st *tp.StructLike, annotations []*tp.Annotation) (*
 			if value == nil {
 				value, err = getFunctionValidation(st, annoVal)
 				if err != nil {
-					return nil, err
+					p.cu.Warn(fmt.Errorf("%s parse as a function failed: %w", annoVal, err))
 				}
 			}
 			if value == nil {
