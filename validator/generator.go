@@ -187,7 +187,7 @@ func (g *generator) generateFieldValidation(vc *ValidateContext) error {
 			hasNilCheck = true
 			g.writeLinef("if %s == nil {\n", vc.Target)
 			g.indent()
-			g.writeLinef("return fmt.Errorf(\"field %s not_nil rule failed\")\n")
+			g.writeLinef("return fmt.Errorf(\"field %s not_nil rule failed\")\n", vc.FieldName)
 			g.unindent()
 			g.writeLine("}")
 		}
