@@ -223,7 +223,7 @@ func (p *Parser) parseInt(st *tp.StructLike, annotations []*tp.Annotation) (*Val
 					NumericAnnotation.GreatEqual,
 					NumericAnnotation.In,
 					NumericAnnotation.NotIn:
-					val, err := strconv.ParseInt(annoVal, 10, 64)
+					val, err := strconv.ParseInt(annoVal, 0, 64)
 					if err != nil {
 						return nil, fmt.Errorf("parse int value failed: %w", err)
 					}
@@ -383,7 +383,7 @@ func (p *Parser) parseBinary(st *tp.StructLike, annotations []*tp.Annotation) (*
 					}
 				case BinaryAnnotation.MinLen,
 					BinaryAnnotation.MaxLen:
-					len, err := strconv.ParseInt(annoVal, 10, 64)
+					len, err := strconv.ParseInt(annoVal, 0, 64)
 					if err != nil {
 						return nil, err
 					}
@@ -452,7 +452,7 @@ func (p *Parser) parseList(st *tp.StructLike, elemType *tp.Type, annotations []*
 				switch node {
 				case ListAnnotation.MinLen,
 					ListAnnotation.MaxLen:
-					len, err := strconv.ParseInt(annoVal, 10, 64)
+					len, err := strconv.ParseInt(annoVal, 0, 64)
 					if err != nil {
 						return nil, err
 					}
@@ -527,7 +527,7 @@ func (p *Parser) parseMap(st *tp.StructLike, keyType, valType *tp.Type, annotati
 			if value == nil {
 				switch node {
 				case MapAnnotation.MinPairs, MapAnnotation.MaxPairs:
-					len, err := strconv.ParseInt(annoVal, 10, 64)
+					len, err := strconv.ParseInt(annoVal, 0, 64)
 					if err != nil {
 						return nil, err
 					}

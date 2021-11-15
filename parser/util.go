@@ -118,7 +118,7 @@ func parseFunctionArguments(st *tp.StructLike, p *Function, node *node32) ([]Val
 					},
 				})
 			case ruleIntConstant:
-				value, err := strconv.ParseInt(p.pegText(node), 10, 64)
+				value, err := strconv.ParseInt(p.pegText(node), 0, 64)
 				if err != nil {
 					return nil, err
 				}
