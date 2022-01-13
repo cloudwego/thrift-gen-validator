@@ -21,100 +21,161 @@ import (
 
 const (
 	validatorPrefix = "vt"
-	NotNil          = "not_nil"
 )
 
+type Key int
+
+const (
+	Const Key = iota
+	LessThan
+	LessEqual
+	GreatThan
+	GreatEqual
+	In
+	NotIn
+	NotNil
+	MinSize
+	MaxSize
+	Pattern
+	Prefix
+	Suffix
+	Contains
+	NotContains
+	DefinedOnly
+	Elem
+	MapKey
+	MapValue
+	NoSparse
+	Skip
+	Assert
+	_max_key
+)
+
+var KeyString = [...]string{
+	Const:       "const",
+	LessThan:    "lt",
+	LessEqual:   "le",
+	GreatThan:   "gt",
+	GreatEqual:  "ge",
+	In:          "in",
+	NotIn:       "not_in",
+	NotNil:      "not_nil",
+	MinSize:     "min_size",
+	MaxSize:     "max_size",
+	Pattern:     "pattern",
+	Prefix:      "prefix",
+	Suffix:      "suffix",
+	Contains:    "contains",
+	NotContains: "not_contains",
+	DefinedOnly: "defined_only",
+	Elem:        "elem",
+	MapKey:      "key",
+	MapValue:    "value",
+	NoSparse:    "no_sparse",
+	Skip:        "skip",
+	Assert:      "assert",
+}
+
+func (k Key) String() (string, bool) {
+	if int(k) > len(KeyString) {
+		return "", false
+	}
+	return KeyString[int(k)], true
+}
+
+func KeyFromString(str string) (Key, bool) {
+	for key, keyStr := range KeyString {
+		if str == keyStr {
+			return Key(key), true
+		}
+	}
+	return 0, false
+}
+
 var (
-	NumericAnnotation = struct {
-		Const      string
-		LessThan   string
-		LessEqual  string
-		GreatThan  string
-		GreatEqual string
-		In         string
-		NotIn      string
-		NotNil     string
-	}{
-		Const:      "const",
-		LessThan:   "lt",
-		LessEqual:  "le",
-		GreatThan:  "gt",
-		GreatEqual: "ge",
-		In:         "in",
-		NotIn:      "not_in",
-		NotNil:     NotNil,
+	RangeKeys = []Key{
+		In,
+		NotIn,
 	}
-	BinaryAnnotation = struct {
-		Const       string
-		MinLen      string
-		MaxLen      string
-		Pattern     string
-		Prefix      string
-		Suffix      string
-		Contains    string
-		NotContains string
-		In          string
-		NotIn       string
-		NotNil      string
-	}{
-		Const:       "const",
-		MinLen:      "min_size",
-		MaxLen:      "max_size",
-		Pattern:     "pattern",
-		Prefix:      "prefix",
-		Suffix:      "suffix",
-		Contains:    "contains",
-		NotContains: "not_contains",
-		In:          "in",
-		NotIn:       "not_in",
-		NotNil:      NotNil,
+	NumericKeys = []Key{
+		Const,
+		LessThan,
+		LessEqual,
+		GreatThan,
+		GreatEqual,
+		In,
+		NotIn,
+		NotNil,
 	}
-	BoolAnnotation = struct {
-		Const  string
-		NotNil string
-	}{
-		Const:  "const",
-		NotNil: NotNil,
+	BinaryKeys = []Key{
+		Const,
+		MinSize,
+		MaxSize,
+		Pattern,
+		Prefix,
+		Suffix,
+		Contains,
+		NotContains,
+		In,
+		NotIn,
+		NotNil,
 	}
-	EnumAnnotation = struct {
-		Const       string
-		DefinedOnly string
-		NotNil      string
-	}{
-		Const:       "const",
-		DefinedOnly: "defined_only",
-		NotNil:      NotNil,
+	BoolKeys = []Key{
+		Const,
+		NotNil,
 	}
-	ListAnnotation = struct {
-		MinLen string
-		MaxLen string
-		Elem   string
-	}{
-		MinLen: "min_size",
-		MaxLen: "max_size",
-		Elem:   "elem",
+	EnumKeys = []Key{
+		Const,
+		DefinedOnly,
+		NotNil,
 	}
-	MapAnnotation = struct {
-		MinPairs string
-		MaxPairs string
-		NoSparse string
-		Key      string
-		Value    string
-	}{
-		MinPairs: "min_size",
-		MaxPairs: "max_size",
-		NoSparse: "no_sparse",
-		Key:      "key",
-		Value:    "value",
+	ListKeys = []Key{
+		MinSize,
+		MaxSize,
+		Elem,
 	}
-	StructLikeAnnotation = struct {
-		Skip   string
-		NotNil string
-	}{
-		Skip:   "skip",
-		NotNil: NotNil,
+	MapKeys = []Key{
+		MinSize,
+		MaxSize,
+		NoSparse,
+		MapKey,
+		MapValue,
+	}
+	StructLikeFieldKeys = []Key{
+		Skip,
+		NotNil,
+	}
+	StructLikeKeys = []Key{
+		Assert,
 	}
 )
+
+func isRangeKey(key Key) bool {
+	for _, rk := range RangeKeys {
+		if key == rk {
+			return true
+		}
+	}
+	return false
+}
+
+func PickSpecifiedKeys(keys []Key) (ret []Key) {
+	for _, key := range keys {
+		if !isRangeKey(key) {
+			ret = append(ret, key)
+		}
+	}
+	return
+}
+
+func PickRangeKeys(keys []Key) (ret []Key) {
+	for _, key := range keys {
+		if isRangeKey(key) {
+			ret = append(ret, key)
+		}
+	}
+	return
+}
 
 type keyParser struct {
 	nodes []string
