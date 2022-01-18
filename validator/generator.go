@@ -74,6 +74,10 @@ func (g *generator) writeLinef(format string, args ...interface{}) {
 	g.WriteString(fmt.Sprintf(format, args...))
 }
 
+func (g *generator) writef(format string, args ...interface{}) {
+	g.WriteString(fmt.Sprintf(format, args...))
+}
+
 func (g *generator) indent() {
 	g.indentNum++
 }
@@ -259,27 +263,19 @@ func (g *generator) generateStructLikeFieldValidation(vc *ValidateContext) error
 }
 
 func (g *generator) generateStructLikeValidation(vc *ValidateContext) error {
-	var skip bool
 	for _, rule := range vc.Rules {
 		switch rule.Key {
 		case parser.Assert:
 			g.writeLinef("if !(")
 			g.generateFunction(vc.StructLike, rule.Specified.TypedValue.Function)
-			g.writeLine(") {")
+			g.writef(") {\n")
 			g.indent()
-			g.writeLinef("return fmt.Errorf(\"struct assertion failed\")")
+			g.writeLine("return fmt.Errorf(\"struct assertion failed\")")
 			g.unindent()
 			g.writeLine("}")
 		default:
 			return errors.New("unknown struct like annotation")
 		}
-	}
-	if !skip {
-		g.writeLinef("if err := %s.IsValid(); err != nil {\n", vc.Target)
-		g.indent()
-		g.writeLinef("return fmt.Errorf(\"filed %s not valid, %%w\", err)", vc.FieldName)
-		g.unindent()
-		g.writeLine("}")
 	}
 	return nil
 }
@@ -478,6 +474,7 @@ func (g *generator) generateNumericValidation(vc *ValidateContext) error {
 				if err := g.generateFunction(vc.StructLike, vt.TypedValue.Function); err != nil {
 					return err
 				}
+				g.writef("\n")
 			}
 		case parser.In, parser.NotIn:
 			source = vc.GenID("_src")
@@ -1040,11 +1037,20 @@ func (g *generator) generateFunction(st *golang.StructLike, f *parser.ToolFuncti
 		genArg := func(arg *parser.ValidationValue) error {
 			switch arg.ValueType {
 			case parser.IntValue:
-				g.writeLinef("int(%d)", arg.TypedValue.Int)
+				g.writef("int(%d)", arg.TypedValue.Int)
 			case parser.FunctionValue:
-				g.writeLinef("int(")
+				g.writef("int(")
 				g.generateFunction(st, arg.TypedValue.Function)
-				g.writeLine(")")
+				g.writef(")")
+			case parser.FieldReferenceValue:
+				g.writef("int(")
+				f := st.Field(arg.TypedValue.FieldReference.Name)
+				source := "p." + f.GoName().String()
+				if f.GoTypeName().IsPointer() {
+					source = "*" + source
+				}
+				g.writef(source)
+				g.writef(")")
 			default:
 				return fmt.Errorf("value type %s is not supported for equal", arg.ValueType)
 			}
@@ -1057,17 +1063,17 @@ func (g *generator) generateFunction(st *golang.StructLike, f *parser.ToolFuncti
 		}
 		switch f.Name {
 		case "equal":
-			g.writeLinef(" == ")
+			g.writef(" == ")
 		case "mod":
-			g.writeLinef(" %% ")
+			g.writef(" %% ")
 		case "add":
-			g.writeLinef(" + ")
+			g.writef(" + ")
 		}
 		if err := genArg(&arg1); err != nil {
 			return err
 		}
 	case "now_unix_nano":
-		g.writeLinef("time.Now().UnixNano()")
+		g.writef("time.Now().UnixNano()")
 		return nil
 	default:
 		return errors.New("unknown function: " + f.Name)

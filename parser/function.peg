@@ -7,7 +7,7 @@ type Function Peg {
 
 Function <- '@' Identifier LPAR Arguments RPAR
 
-Arguments <- (ConstValue ListSeparator?)*
+Arguments <- ((ConstValue / Function) ListSeparator?)*
 
 ConstValue <- DoubleConstant / IntConstant / Literal / ConstList / ConstMap / FieldReference
 

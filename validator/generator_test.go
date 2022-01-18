@@ -15,6 +15,7 @@
 package validator
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -26,31 +27,38 @@ import (
 var numericTest = `
 struct Numeric {
 	1: i64 I64 (vt.gt = "10")
-}
+	2: i64 time (vt.gt = "@add(@now_unix_nano(), 1000)")
+} (vt.assert = "@equal($I64, 12)", vt.assert = "@equal(@mod($I64, 10), 0)")
 `
 
 func Test_generator_generate(t *testing.T) {
-	ast, err := parser.ParseString("a.thrift", numericTest)
+	numericAST, err := parser.ParseString("a.thrift", numericTest)
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = semantic.ResolveSymbols(ast)
+	err = semantic.ResolveSymbols(numericAST)
 	if err != nil {
 		t.Fatal(err)
 	}
 	tests := []struct {
 		name    string
 		req     *plugin.Request
-		want    string
+		wants   []string
 		wantErr bool
 	}{
 		{
 			name: "numeric",
 			req: &plugin.Request{
-				AST:        ast,
+				AST:        numericAST,
 				OutputPath: ".",
 			},
-			want:    `if p.I64 <= int64(10) {`,
+			wants: []string{
+				`if p.I64 <= int64(10) {`,
+				`_src := int(time.Now().UnixNano()) + int(1000)`,
+				`if p.Time <= int64(_src) {`,
+				`if !(int(p.I64) == int(12)) {`,
+				`if !(int(int(p.I64) % int(10)) == int(0)) {`,
+			},
 			wantErr: false,
 		},
 	}
@@ -62,9 +70,12 @@ func Test_generator_generate(t *testing.T) {
 				t.Errorf("generator.generate() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !strings.Contains(got[0].Content, tt.want) {
-				t.Errorf("generator.generate() = %v, want %v", got[0].Content, tt.want)
+			for _, want := range tt.wants {
+				if !strings.Contains(got[0].Content, want) {
+					t.Errorf("generator.generate() = %v, want %v", got[0].Content, want)
+				}
 			}
+			fmt.Println(got[0].Content)
 		})
 	}
 }
