@@ -38,6 +38,16 @@ func (p *Function) pegText(node *node32) string {
 	return ""
 }
 
+func (p *Function) pegAllText(node *node32) (s string) {
+	for n := node; n != nil; n = n.next {
+		text := string(p.buffer[int(n.begin):int(n.end)])
+		if text != "" {
+			return text
+		}
+	}
+	return ""
+}
+
 func getFieldReferenceValidation(st *tp.StructLike, anno string) (*ValidationValue, error) {
 	if !strings.HasPrefix(anno, "$") {
 		return nil, nil
@@ -135,10 +145,6 @@ func parseFunctionArguments(st *tp.StructLike, p *Function, node *node32) ([]Val
 						Binary: p.pegText(node),
 					},
 				})
-			case ruleConstList:
-				// TODO: support list argument
-			case ruleConstMap:
-				// TODO: support map argument
 			case ruleFieldReference:
 				val, err := getFieldReferenceValidation(st, "$"+p.pegText(node))
 				if err != nil {
@@ -147,7 +153,22 @@ func parseFunctionArguments(st *tp.StructLike, p *Function, node *node32) ([]Val
 				if val != nil {
 					ret = append(ret, *val)
 				}
+			default:
+				return nil, fmt.Errorf("unsupported const value %s for function arguments", rul3s[node.pegRule])
 			}
+		case ruleFunction:
+			fv, err := getFunctionValidation(st, p.pegAllText(node))
+			if err != nil {
+				return nil, fmt.Errorf("unsupported const value %s for function arguments", rul3s[node.pegRule])
+			}
+			ret = append(ret, ValidationValue{
+				ValueType: FunctionValue,
+				TypedValue: TypedValidationValue{
+					Function: fv.TypedValue.Function,
+				},
+			})
+		default:
+			return nil, fmt.Errorf("unsupported rule %s for function arguments", rul3s[node.pegRule])
 		}
 	}
 	return ret, nil

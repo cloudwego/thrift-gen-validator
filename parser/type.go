@@ -27,6 +27,7 @@ const (
 	EnumValidation
 	ListValidation
 	MapValidation
+	StructLikeFieldValidation
 	StructLikeValidation
 )
 
@@ -47,6 +48,20 @@ const (
 	FunctionValue
 )
 
+var ValueTypeName = [...]string{
+	FieldReferenceValue: "field-reference-value",
+	DoubleValue:         "double-value",
+	IntValue:            "int-value",
+	BoolValue:           "bool-value",
+	EnumValue:           "enum-value",
+	BinaryValue:         "binary-value",
+	FunctionValue:       "function-value",
+}
+
+func (vt ValueType) String() string {
+	return ValueTypeName[vt]
+}
+
 type ValidationValue struct {
 	ValueType  ValueType
 	TypedValue TypedValidationValue
@@ -63,10 +78,10 @@ type TypedValidationValue struct {
 }
 
 type Rule struct {
-	Annotation string
-	Specified  *ValidationValue
-	Range      []*ValidationValue
-	Inner      *Validation
+	Key       Key
+	Specified *ValidationValue
+	Range     []*ValidationValue
+	Inner     *Validation
 }
 
 type ToolFunction struct {
@@ -75,12 +90,14 @@ type ToolFunction struct {
 }
 
 type RuleFactory struct {
-	specifiedKeys []string
-	rangeKeys     []string
+	specifiedKeys []Key
+	rangeKeys     []Key
 	rangeRules    []*Rule
 }
 
-func NewRuleFactory(specifiedKeys, rangeKeys []string) *RuleFactory {
+func NewRuleFactory(keys []Key) *RuleFactory {
+	rangeKeys := PickRangeKeys(keys)
+	specifiedKeys := PickSpecifiedKeys(keys)
 	rangeRules := make([]*Rule, len(rangeKeys))
 	return &RuleFactory{
 		specifiedKeys: specifiedKeys,
@@ -89,12 +106,12 @@ func NewRuleFactory(specifiedKeys, rangeKeys []string) *RuleFactory {
 	}
 }
 
-func (v *RuleFactory) NewRule(key string, value *ValidationValue) (bool, *Rule) {
+func (v *RuleFactory) NewRule(key Key, value *ValidationValue) (bool, *Rule) {
 	for _, sk := range v.specifiedKeys {
 		if sk == key {
 			return true, &Rule{
-				Annotation: key,
-				Specified:  value,
+				Key:       key,
+				Specified: value,
 			}
 		}
 	}
@@ -102,8 +119,8 @@ func (v *RuleFactory) NewRule(key string, value *ValidationValue) (bool, *Rule) 
 		if rk == key {
 			if v.rangeRules[i] == nil {
 				v.rangeRules[i] = &Rule{
-					Annotation: key,
-					Range:      []*ValidationValue{value},
+					Key:   key,
+					Range: []*ValidationValue{value},
 				}
 				return true, v.rangeRules[i]
 			} else {

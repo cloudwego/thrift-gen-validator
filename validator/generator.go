@@ -74,6 +74,10 @@ func (g *generator) writeLinef(format string, args ...interface{}) {
 	g.WriteString(fmt.Sprintf(format, args...))
 }
 
+func (g *generator) writef(format string, args ...interface{}) {
+	g.WriteString(fmt.Sprintf(format, args...))
+}
+
 func (g *generator) indent() {
 	g.indentNum++
 }
@@ -85,7 +89,7 @@ func (g *generator) unindent() {
 func (g *generator) mkValidateContexts(ast *tp.Thrift, resolver *golang.Resolver, st *golang.StructLike) ([]*ValidateContext, error) {
 	var ret []*ValidateContext
 	p := parser.NewParser(g.utils)
-	vs, err := p.Parse(st.StructLike)
+	structLikeValidation, fieldValidations, err := p.Parse(st.StructLike)
 	if err != nil {
 		return nil, err
 	}
@@ -102,11 +106,17 @@ func (g *generator) mkValidateContexts(ast *tp.Thrift, resolver *golang.Resolver
 			RawFieldName:     f.Field.Name,
 			StructLike:       st,
 			ReadWriteContext: rwctx,
-			Validation:       vs[f.Field],
+			Validation:       fieldValidations[f.Field],
 			IsOptional:       f.Requiredness.IsOptional(),
 			ids:              ids,
 		})
 	}
+	ret = append(ret, &ValidateContext{
+		AST:        ast,
+		Resolver:   resolver,
+		StructLike: st,
+		Validation: structLikeValidation,
+	})
 	return ret, nil
 }
 
@@ -162,14 +172,22 @@ func (g *generator) generateValidation(ast *tp.Thrift, resolver *golang.Resolver
 		g.writeLinef("func (p *%s) IsValid() error {\n", st.GoName().String())
 		g.indent()
 		for _, vc := range vcs {
-			isStructLike := vc.Type.Category.IsStructLike()
-			if len(vc.Rules) == 0 && !isStructLike {
-				continue
-			}
-
-			err = g.generateFieldValidation(vc)
-			if err != nil {
-				return err
+			switch vc.ValidationType {
+			case parser.StructLikeValidation:
+				if len(vc.Rules) == 0 {
+					continue
+				}
+				if err = g.generateStructLikeValidation(vc); err != nil {
+					return err
+				}
+			default:
+				isStructLike := vc.Type.Category.IsStructLike()
+				if len(vc.Rules) == 0 && !isStructLike {
+					continue
+				}
+				if err = g.generateFieldValidation(vc); err != nil {
+					return err
+				}
 			}
 		}
 		g.writeLine("return nil")
@@ -183,7 +201,7 @@ func (g *generator) generateFieldValidation(vc *ValidateContext) error {
 	// pointer guard
 	var hasNilCheck bool
 	for _, r := range vc.Rules {
-		if r.Annotation == parser.NotNil && r.Specified.TypedValue.Bool {
+		if r.Key == parser.NotNil && r.Specified.TypedValue.Bool {
 			hasNilCheck = true
 			g.writeLinef("if %s == nil {\n", vc.Target)
 			g.indent()
@@ -200,7 +218,7 @@ func (g *generator) generateFieldValidation(vc *ValidateContext) error {
 
 	var err error
 	if ok := vc.Type.Category.IsStructLike(); ok {
-		err = g.generateStructLikeValidation(vc)
+		err = g.generateStructLikeFieldValidation(vc)
 	} else if ok := vc.Type.Category.IsEnum(); ok {
 		err = g.generateEnumValidation(vc)
 	} else if ok := vc.Type.Category.IsBaseType(); ok {
@@ -219,16 +237,16 @@ func (g *generator) generateFieldValidation(vc *ValidateContext) error {
 	return nil
 }
 
-func (g *generator) generateStructLikeValidation(vc *ValidateContext) error {
+func (g *generator) generateStructLikeFieldValidation(vc *ValidateContext) error {
 	var skip bool
 	for _, rule := range vc.Rules {
-		switch rule.Annotation {
-		case parser.StructLikeAnnotation.Skip:
+		switch rule.Key {
+		case parser.Skip:
 			if rule.Specified.TypedValue.Bool {
 				g.writeLinef("// skip field %s check\n", vc.FieldName)
 				skip = true
 			}
-		case parser.StructLikeAnnotation.NotNil:
+		case parser.NotNil:
 			// do nothing
 		default:
 			return errors.New("unknown struct like annotation")
@@ -244,17 +262,35 @@ func (g *generator) generateStructLikeValidation(vc *ValidateContext) error {
 	return nil
 }
 
+func (g *generator) generateStructLikeValidation(vc *ValidateContext) error {
+	for _, rule := range vc.Rules {
+		switch rule.Key {
+		case parser.Assert:
+			g.writeLinef("if !(")
+			g.generateFunction(vc.StructLike, rule.Specified.TypedValue.Function)
+			g.writef(") {\n")
+			g.indent()
+			g.writeLine("return fmt.Errorf(\"struct assertion failed\")")
+			g.unindent()
+			g.writeLine("}")
+		default:
+			return errors.New("unknown struct like annotation")
+		}
+	}
+	return nil
+}
+
 func (g *generator) generateEnumValidation(vc *ValidateContext) error {
 	var target, source string
 	for _, rule := range vc.Rules {
 		// construct target
 		target = vc.Target
-		if vc.IsPointer && rule.Annotation != parser.BoolAnnotation.NotNil {
+		if vc.IsPointer && rule.Key != parser.NotNil {
 			target = "*" + target
 		}
 		// construct source
-		switch rule.Annotation {
-		case parser.EnumAnnotation.Const:
+		switch rule.Key {
+		case parser.Const:
 			identifier := rule.Specified.TypedValue.Binary
 			sss := semantic.SplitValue(identifier)
 			var ref []*tp.ConstValueExtra
@@ -321,21 +357,21 @@ func (g *generator) generateEnumValidation(vc *ValidateContext) error {
 			}
 			source = vc.GenID("_src")
 			g.writeLinef("%s := %s\n", source, str)
-		case parser.EnumAnnotation.DefinedOnly,
-			parser.EnumAnnotation.NotNil:
+		case parser.DefinedOnly,
+			parser.NotNil:
 			// do nothing
 		default:
 			return errors.New("unknown bool annotation")
 		}
 		// generate validation code
-		switch rule.Annotation {
-		case parser.EnumAnnotation.Const:
+		switch rule.Key {
+		case parser.Const:
 			g.writeLinef("if %s != %s {\n", target, source)
 			g.indent()
 			g.writeLinef("return fmt.Errorf(\"field %s const rule failed, current value: %%v\", %s)\n", vc.FieldName, target)
 			g.unindent()
 			g.writeLine("}")
-		case parser.EnumAnnotation.DefinedOnly:
+		case parser.DefinedOnly:
 			if rule.Specified.TypedValue.Bool {
 				g.writeLinef("if %s.String() == \"<UNSET>\" {\n", vc.Target)
 				g.indent()
@@ -343,7 +379,7 @@ func (g *generator) generateEnumValidation(vc *ValidateContext) error {
 				g.unindent()
 				g.writeLine("}")
 			}
-		case parser.EnumAnnotation.NotNil:
+		case parser.NotNil:
 			// do nothing
 		default:
 			return errors.New("unknown bool annotation")
@@ -370,12 +406,12 @@ func (g *generator) generateBoolValidation(vc *ValidateContext) error {
 	for _, rule := range vc.Rules {
 		// construct target
 		target = vc.Target
-		if vc.IsPointer && rule.Annotation != parser.BoolAnnotation.NotNil {
+		if vc.IsPointer && rule.Key != parser.NotNil {
 			target = "*" + target
 		}
 		// construct source
-		switch rule.Annotation {
-		case parser.BoolAnnotation.Const:
+		switch rule.Key {
+		case parser.Const:
 			vt := rule.Specified
 			if vt.ValueType == parser.BoolValue {
 				source = strconv.FormatBool(vt.TypedValue.Bool)
@@ -386,20 +422,20 @@ func (g *generator) generateBoolValidation(vc *ValidateContext) error {
 					source = "*" + source
 				}
 			}
-		case parser.BoolAnnotation.NotNil:
+		case parser.NotNil:
 			// do nothing
 		default:
 			return errors.New("unknown bool annotation")
 		}
 		// generate validation code
-		switch rule.Annotation {
-		case parser.BoolAnnotation.Const:
+		switch rule.Key {
+		case parser.Const:
 			g.writeLinef("if %s != %s {\n", target, source)
 			g.indent()
 			g.writeLinef("return fmt.Errorf(\"field %s const rule failed, current value: %%v\", %s)\n", vc.FieldName, target)
 			g.unindent()
 			g.writeLine("}")
-		case parser.BoolAnnotation.NotNil:
+		case parser.NotNil:
 			// nothing
 		default:
 			return errors.New("unknown bool annotation")
@@ -414,13 +450,13 @@ func (g *generator) generateNumericValidation(vc *ValidateContext) error {
 		// construct target
 		target = vc.Target
 		typeName = vc.ReadWriteContext.TypeName.String()
-		if vc.IsPointer && rule.Annotation != parser.NumericAnnotation.NotNil {
+		if vc.IsPointer && rule.Key != parser.NotNil {
 			target = "*" + target
 			typeName = vc.ReadWriteContext.TypeName.Deref().String()
 		}
 		// construct source
-		switch rule.Annotation {
-		case parser.NumericAnnotation.Const, parser.NumericAnnotation.LessThan, parser.NumericAnnotation.LessEqual, parser.NumericAnnotation.GreatThan, parser.NumericAnnotation.GreatEqual:
+		switch rule.Key {
+		case parser.Const, parser.LessThan, parser.LessEqual, parser.GreatThan, parser.GreatEqual:
 			vt := rule.Specified
 			if vt.ValueType == parser.IntValue {
 				source = strconv.FormatInt(vt.TypedValue.Int, 10)
@@ -438,48 +474,49 @@ func (g *generator) generateNumericValidation(vc *ValidateContext) error {
 				if err := g.generateFunction(vc.StructLike, vt.TypedValue.Function); err != nil {
 					return err
 				}
+				g.writef("\n")
 			}
-		case parser.NumericAnnotation.In, parser.NumericAnnotation.NotIn:
+		case parser.In, parser.NotIn:
 			source = vc.GenID("_src")
 			g.generateSlice(vc.StructLike, source, vc.TypeID, rule.Range)
-		case parser.NumericAnnotation.NotNil:
+		case parser.NotNil:
 			// do nothing
 		default:
 			return errors.New("unknown numeric annotation")
 		}
 
-		switch rule.Annotation {
-		case parser.NumericAnnotation.Const:
+		switch rule.Key {
+		case parser.Const:
 			g.writeLinef("if %s != %s(%s) {\n", target, typeName, source)
 			g.indent()
 			g.writeLinef("return fmt.Errorf(\"field %s not match const value, current value: %%v\", %s)\n", vc.FieldName, target)
 			g.unindent()
 			g.writeLine("}")
-		case parser.NumericAnnotation.LessThan:
+		case parser.LessThan:
 			g.writeLinef("if %s >= %s(%s) {\n", target, typeName, source)
 			g.indent()
 			g.writeLinef("return fmt.Errorf(\"field %s lt rule failed, current value: %%v\", %s)\n", vc.FieldName, target)
 			g.unindent()
 			g.writeLine("}")
-		case parser.NumericAnnotation.LessEqual:
+		case parser.LessEqual:
 			g.writeLinef("if %s > %s(%s) {\n", target, typeName, source)
 			g.indent()
 			g.writeLinef("return fmt.Errorf(\"field %s le rule failed, current value: %%v\", %s)\n", vc.FieldName, target)
 			g.unindent()
 			g.writeLine("}")
-		case parser.NumericAnnotation.GreatThan:
+		case parser.GreatThan:
 			g.writeLinef("if %s <= %s(%s) {\n", target, typeName, source)
 			g.indent()
 			g.writeLinef("return fmt.Errorf(\"field %s gt rule failed, current value: %%v\", %s)\n", vc.FieldName, target)
 			g.unindent()
 			g.writeLine("}")
-		case parser.NumericAnnotation.GreatEqual:
+		case parser.GreatEqual:
 			g.writeLinef("if %s < %s(%s) {\n", target, typeName, source)
 			g.indent()
 			g.writeLinef("return fmt.Errorf(\"field %s ge rule failed, current value: %%v\", %s)\n", vc.FieldName, target)
 			g.unindent()
 			g.writeLine("}")
-		case parser.NumericAnnotation.In:
+		case parser.In:
 			exist := vc.GenID("_exist")
 			g.writeLinef("var %s bool\n", exist)
 			g.writeLinef("for _, src := range %s {\n", source)
@@ -497,7 +534,7 @@ func (g *generator) generateNumericValidation(vc *ValidateContext) error {
 			g.writeLinef("return fmt.Errorf(\"field %s in rule failed, current value: %%v\", %s)\n", vc.FieldName, target)
 			g.unindent()
 			g.writeLine("}")
-		case parser.NumericAnnotation.NotIn:
+		case parser.NotIn:
 			g.writeLinef("for _, src := range %s {\n", source)
 			g.indent()
 			g.writeLinef("if %s == %s(src) {\n", target, typeName)
@@ -507,7 +544,7 @@ func (g *generator) generateNumericValidation(vc *ValidateContext) error {
 			g.writeLine("}")
 			g.unindent()
 			g.writeLine("}")
-		case parser.NumericAnnotation.NotNil:
+		case parser.NotNil:
 			// do nothing
 		default:
 			return errors.New("unknown numeric annotation")
@@ -521,12 +558,12 @@ func (g *generator) generateBinaryValidation(vc *ValidateContext) error {
 	for _, rule := range vc.Rules {
 		// construct target
 		target = vc.Target
-		if vc.IsPointer && rule.Annotation != parser.BinaryAnnotation.NotNil {
+		if vc.IsPointer && rule.Key != parser.NotNil {
 			target = "*" + target
 		}
 		// construct source
-		switch rule.Annotation {
-		case parser.BinaryAnnotation.Const, parser.BinaryAnnotation.Prefix, parser.BinaryAnnotation.Suffix, parser.BinaryAnnotation.Contains, parser.BinaryAnnotation.NotContains, parser.BinaryAnnotation.Pattern:
+		switch rule.Key {
+		case parser.Const, parser.Prefix, parser.Suffix, parser.Contains, parser.NotContains, parser.Pattern:
 			vt := rule.Specified
 			if vt.ValueType == parser.FieldReferenceValue {
 				f := vc.StructLike.Field(vt.TypedValue.FieldReference.Name)
@@ -542,13 +579,13 @@ func (g *generator) generateBinaryValidation(vc *ValidateContext) error {
 				}
 			} else {
 				source = vc.GenID("_src")
-				if vc.TypeID == "String" || rule.Annotation == parser.BinaryAnnotation.Pattern {
+				if vc.TypeID == "String" || rule.Key == parser.Pattern {
 					g.writeLine(source + " := \"" + vt.TypedValue.Binary + "\"")
 				} else {
 					g.writeLine(source + " := []byte(\"" + vt.TypedValue.Binary + "\")")
 				}
 			}
-		case parser.BinaryAnnotation.MinLen, parser.BinaryAnnotation.MaxLen:
+		case parser.MinSize, parser.MaxSize:
 			vt := rule.Specified
 			if vt.ValueType == parser.FieldReferenceValue {
 				f := vc.StructLike.Field(vt.TypedValue.FieldReference.Name)
@@ -565,29 +602,29 @@ func (g *generator) generateBinaryValidation(vc *ValidateContext) error {
 					return err
 				}
 			}
-		case parser.BinaryAnnotation.In, parser.BinaryAnnotation.NotIn:
+		case parser.In, parser.NotIn:
 			source = vc.GenID("_src")
 			g.generateSlice(vc.StructLike, source, vc.TypeID, rule.Range)
-		case parser.BinaryAnnotation.NotNil:
+		case parser.NotNil:
 			// do nothing
 		default:
 			return errors.New("unknown binary annotation")
 		}
 		// generate validation code
-		switch rule.Annotation {
-		case parser.BinaryAnnotation.MinLen:
+		switch rule.Key {
+		case parser.MinSize:
 			g.writeLinef("if len(%s) < int(%s) {\n", target, source)
 			g.indent()
 			g.writeLinef("return fmt.Errorf(\"field %s min_len rule failed, current value: %%d\", len(%s))\n", vc.FieldName, target)
 			g.unindent()
 			g.writeLine("}")
-		case parser.BinaryAnnotation.MaxLen:
+		case parser.MaxSize:
 			g.writeLinef("if len(%s) > int(%s) {\n", target, source)
 			g.indent()
 			g.writeLinef("return fmt.Errorf(\"field %s max_len rule failed, current value: %%d\", len(%s))\n", vc.FieldName, target)
 			g.unindent()
 			g.writeLine("}")
-		case parser.BinaryAnnotation.Const:
+		case parser.Const:
 			if vc.TypeID == "String" {
 				g.writeLinef("if %s != %s {\n", target, source)
 			} else {
@@ -597,7 +634,7 @@ func (g *generator) generateBinaryValidation(vc *ValidateContext) error {
 			g.writeLinef("return fmt.Errorf(\"field %s not match const value, current value: %%v\", %s)\n", vc.FieldName, target)
 			g.unindent()
 			g.writeLine("}")
-		case parser.BinaryAnnotation.Prefix:
+		case parser.Prefix:
 			if vc.TypeID == "String" {
 				g.writeLinef("if !strings.HasPrefix(%s, %s) {\n", target, source)
 			} else {
@@ -607,7 +644,7 @@ func (g *generator) generateBinaryValidation(vc *ValidateContext) error {
 			g.writeLinef("return fmt.Errorf(\"field %s prefix rule failed, current value: %%v\", %s)\n", vc.FieldName, target)
 			g.unindent()
 			g.writeLine("}")
-		case parser.BinaryAnnotation.Suffix:
+		case parser.Suffix:
 			if vc.TypeID == "String" {
 				g.writeLinef("if !strings.HasSuffix(%s, %s) {\n", target, source)
 			} else {
@@ -617,7 +654,7 @@ func (g *generator) generateBinaryValidation(vc *ValidateContext) error {
 			g.writeLinef("return fmt.Errorf(\"field %s suffix rule failed, current value: %%v\", %s)\n", vc.FieldName, target)
 			g.unindent()
 			g.writeLine("}")
-		case parser.BinaryAnnotation.Contains:
+		case parser.Contains:
 			if vc.TypeID == "String" {
 				g.writeLinef("if !strings.Contains(%s, %s) {\n", target, source)
 			} else {
@@ -627,7 +664,7 @@ func (g *generator) generateBinaryValidation(vc *ValidateContext) error {
 			g.writeLinef("return fmt.Errorf(\"field %s contains rule failed, current value: %%v\", %s)\n", vc.FieldName, target)
 			g.unindent()
 			g.writeLine("}")
-		case parser.BinaryAnnotation.NotContains:
+		case parser.NotContains:
 			if vc.TypeID == "String" {
 				g.writeLinef("if strings.Contains(%s, %s) {\n", target, source)
 			} else {
@@ -637,7 +674,7 @@ func (g *generator) generateBinaryValidation(vc *ValidateContext) error {
 			g.writeLinef("return fmt.Errorf(\"field %s not_contains rule failed, current value: %%v\", %s)\n", vc.FieldName, target)
 			g.unindent()
 			g.writeLine("}")
-		case parser.BinaryAnnotation.Pattern:
+		case parser.Pattern:
 			if vc.TypeID == "String" {
 				g.writeLinef("if ok, _ := regexp.MatchString(%s, %s); !ok {\n", source, target)
 			} else {
@@ -647,7 +684,7 @@ func (g *generator) generateBinaryValidation(vc *ValidateContext) error {
 			g.writeLinef("return fmt.Errorf(\"field %s pattern rule failed, current value: %%v\", %s)\n", vc.FieldName, target)
 			g.unindent()
 			g.writeLine("}")
-		case parser.BinaryAnnotation.In:
+		case parser.In:
 			exist := vc.GenID("_exist")
 			g.writeLinef("var %s bool\n", exist)
 			g.writeLinef("for _, src := range %s {\n", source)
@@ -669,7 +706,7 @@ func (g *generator) generateBinaryValidation(vc *ValidateContext) error {
 			g.writeLinef("return fmt.Errorf(\"field %s in rule failed, current value: %%v\", %s)\n", vc.FieldName, target)
 			g.unindent()
 			g.writeLine("}")
-		case parser.BinaryAnnotation.NotIn:
+		case parser.NotIn:
 			g.writeLinef("for _, src := range %s {\n", source)
 			g.indent()
 			if vc.TypeID == "String" {
@@ -683,7 +720,7 @@ func (g *generator) generateBinaryValidation(vc *ValidateContext) error {
 			g.writeLine("}")
 			g.unindent()
 			g.writeLine("}")
-		case parser.BinaryAnnotation.NotNil:
+		case parser.NotNil:
 			// do nothing
 		default:
 			return errors.New("unknown binary annotation")
@@ -706,8 +743,8 @@ func (g *generator) generateListValidation(vc *ValidateContext) error {
 		target = "*" + target
 	}
 	for _, rule := range vc.Rules {
-		switch rule.Annotation {
-		case parser.ListAnnotation.MinLen, parser.ListAnnotation.MaxLen:
+		switch rule.Key {
+		case parser.MinSize, parser.MaxSize:
 			vt := rule.Specified
 			if vt.ValueType == parser.IntValue {
 				source = strconv.FormatInt(vt.TypedValue.Int, 10)
@@ -724,25 +761,25 @@ func (g *generator) generateListValidation(vc *ValidateContext) error {
 					return err
 				}
 			}
-		case parser.ListAnnotation.Elem:
+		case parser.Elem:
 			// do nothing
 		default:
 			return errors.New("unknown list annotation")
 		}
-		switch rule.Annotation {
-		case parser.ListAnnotation.MinLen:
+		switch rule.Key {
+		case parser.MinSize:
 			g.writeLinef("if len(%s) < int(%s) {\n", target, source)
 			g.indent()
 			g.writeLinef("return fmt.Errorf(\"field %s MinLen rule failed, current value: %%v\", %s)\n", vc.FieldName, target)
 			g.unindent()
 			g.writeLine("}")
-		case parser.ListAnnotation.MaxLen:
+		case parser.MaxSize:
 			g.writeLinef("if len(%s) > int(%s) {\n", target, source)
 			g.indent()
 			g.writeLinef("return fmt.Errorf(\"field %s MaxLen rule failed, current value: %%v\", %s)\n", vc.FieldName, target)
 			g.unindent()
 			g.writeLine("}")
-		case parser.ListAnnotation.Elem:
+		case parser.Elem:
 			g.writeLinef("for i := 0; i < len(%s); i++ {\n", target)
 			g.indent()
 			elemName := vc.GenID("_elem")
@@ -777,8 +814,8 @@ func (g *generator) generateMapValidation(vc *ValidateContext) error {
 		target = "*" + target
 	}
 	for _, rule := range vc.Rules {
-		switch rule.Annotation {
-		case parser.MapAnnotation.MinPairs, parser.MapAnnotation.MaxPairs:
+		switch rule.Key {
+		case parser.MinSize, parser.MaxSize:
 			vt := rule.Specified
 			if vt.ValueType == parser.IntValue {
 				source = strconv.FormatInt(vt.TypedValue.Int, 10)
@@ -795,7 +832,7 @@ func (g *generator) generateMapValidation(vc *ValidateContext) error {
 					return err
 				}
 			}
-		case parser.MapAnnotation.NoSparse:
+		case parser.NoSparse:
 			vt := rule.Specified
 			if vt.ValueType == parser.BoolValue {
 				source = strconv.FormatBool(vt.TypedValue.Bool)
@@ -806,25 +843,25 @@ func (g *generator) generateMapValidation(vc *ValidateContext) error {
 					source = "*" + source
 				}
 			}
-		case parser.MapAnnotation.Key, parser.MapAnnotation.Value:
+		case parser.MapKey, parser.MapValue:
 			// do nothing
 		default:
 			return errors.New("unknown map annotation")
 		}
-		switch rule.Annotation {
-		case parser.MapAnnotation.MinPairs:
+		switch rule.Key {
+		case parser.MinSize:
 			g.writeLinef("if len(%s) < int(%s) {\n", target, source)
 			g.indent()
 			g.writeLinef("return fmt.Errorf(\"field %s min_size rule failed, current value: %%v\", %s)\n", vc.FieldName, target)
 			g.unindent()
 			g.writeLine("}")
-		case parser.MapAnnotation.MaxPairs:
+		case parser.MaxSize:
 			g.writeLinef("if len(%s) > int(%s) {\n", target, source)
 			g.indent()
 			g.writeLinef("return fmt.Errorf(\"field %s max_size rule failed, current value: %%v\", %s)\n", vc.FieldName, target)
 			g.unindent()
 			g.writeLine("}")
-		case parser.MapAnnotation.NoSparse:
+		case parser.NoSparse:
 			g.writeLinef("for _, v := range %s {\n", target)
 			g.indent()
 			g.writeLinef("if v == nil {\n")
@@ -834,7 +871,7 @@ func (g *generator) generateMapValidation(vc *ValidateContext) error {
 			g.writeLine("}")
 			g.unindent()
 			g.writeLine("}")
-		case parser.MapAnnotation.Key:
+		case parser.MapKey:
 			g.writeLinef("for k := range %s {\n", target)
 			g.indent()
 
@@ -853,7 +890,7 @@ func (g *generator) generateMapValidation(vc *ValidateContext) error {
 			}
 			g.unindent()
 			g.writeLine("}")
-		case parser.MapAnnotation.Value:
+		case parser.MapValue:
 			g.writeLinef("for _, v := range %s {\n", target)
 			g.indent()
 
@@ -995,6 +1032,49 @@ func (g *generator) generateFunction(st *golang.StructLike, f *parser.ToolFuncti
 			}
 		}
 		g.writeLine(strings.Join(args, ",") + ")")
+	// binary function
+	case "equal", "mod", "add":
+		genArg := func(arg *parser.ValidationValue) error {
+			switch arg.ValueType {
+			case parser.IntValue:
+				g.writef("int(%d)", arg.TypedValue.Int)
+			case parser.FunctionValue:
+				g.writef("int(")
+				g.generateFunction(st, arg.TypedValue.Function)
+				g.writef(")")
+			case parser.FieldReferenceValue:
+				g.writef("int(")
+				f := st.Field(arg.TypedValue.FieldReference.Name)
+				source := "p." + f.GoName().String()
+				if f.GoTypeName().IsPointer() {
+					source = "*" + source
+				}
+				g.writef(source)
+				g.writef(")")
+			default:
+				return fmt.Errorf("value type %s is not supported for equal", arg.ValueType)
+			}
+			return nil
+		}
+		arg0 := f.Arguments[0]
+		arg1 := f.Arguments[1]
+		if err := genArg(&arg0); err != nil {
+			return err
+		}
+		switch f.Name {
+		case "equal":
+			g.writef(" == ")
+		case "mod":
+			g.writef(" %% ")
+		case "add":
+			g.writef(" + ")
+		}
+		if err := genArg(&arg1); err != nil {
+			return err
+		}
+	case "now_unix_nano":
+		g.writef("time.Now().UnixNano()")
+		return nil
 	default:
 		return errors.New("unknown function: " + f.Name)
 	}

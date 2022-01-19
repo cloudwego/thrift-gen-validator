@@ -31,7 +31,7 @@ func NewParser(cu *golang.CodeUtils) *Parser {
 	return &Parser{cu}
 }
 
-func (p *Parser) Parse(st *tp.StructLike) (map[*tp.Field]*Validation, error) {
+func (p *Parser) Parse(st *tp.StructLike) (*Validation, map[*tp.Field]*Validation, error) {
 	ret := make(map[*tp.Field]*Validation)
 	for _, f := range st.GetFields() {
 		annotations := f.GetAnnotations()
@@ -43,11 +43,22 @@ func (p *Parser) Parse(st *tp.StructLike) (map[*tp.Field]*Validation, error) {
 		}
 		v, err := p.parseField(st, f.Type, validAnnotations)
 		if err != nil {
-			return nil, fmt.Errorf("[annotation parser] parse %s's field %s failed: %w", st.Name, f.Name, err)
+			return nil, nil, fmt.Errorf("[annotation parser] parse %s's field %s failed: %w", st.Name, f.Name, err)
 		}
 		ret[f] = v
 	}
-	return ret, nil
+	annotations := st.GetAnnotations()
+	var validAnnotations []*tp.Annotation
+	for _, anno := range annotations {
+		if strings.HasPrefix(anno.Key, "vt.") {
+			validAnnotations = append(validAnnotations, anno)
+		}
+	}
+	v, err := p.parseStruct(st, validAnnotations)
+	if err != nil {
+		return nil, nil, fmt.Errorf("[annotation parser] parse %s's annotations failed: %w", st.Name, err)
+	}
+	return v, ret, nil
 }
 
 func (p *Parser) parseField(st *tp.StructLike, typ *tp.Type, annotations []*tp.Annotation) (*Validation, error) {
@@ -68,28 +79,26 @@ func (p *Parser) parseField(st *tp.StructLike, typ *tp.Type, annotations []*tp.A
 	case "Map":
 		return p.parseMap(st, typ.KeyType, typ.ValueType, annotations)
 	case "Struct":
-		return p.parseStruct(st, annotations)
+		return p.parseStructField(st, annotations)
 	default:
-		return nil, fmt.Errorf("type %s not recognized", golang.GetTypeID(typ))
+		return nil, fmt.Errorf("type %s not recognized", typ.Name)
 	}
 }
 
 func (p *Parser) parseEnum(st *tp.StructLike, annotations []*tp.Annotation) (*Validation, error) {
 	validation := &Validation{ValidationType: EnumValidation}
-	specifiedKeys := []string{
-		EnumAnnotation.Const,
-		EnumAnnotation.DefinedOnly,
-		EnumAnnotation.NotNil,
-	}
-	rangeKeys := []string{}
-	rf := NewRuleFactory(specifiedKeys, rangeKeys)
+	rf := NewRuleFactory(EnumKeys)
 	for _, anno := range annotations {
 		annoKey, annoVals := anno.Key, anno.Values
 		kp, err := newKeyParser(annoKey)
 		if err != nil {
 			return nil, err
 		}
-		node := kp.next()
+		nodeStr := kp.next()
+		nodeKey, ok := KeyFromString(nodeStr)
+		if !ok {
+			return nil, fmt.Errorf("invalid key %s", nodeStr)
+		}
 		for _, annoVal := range annoVals {
 			value, err := getFieldReferenceValidation(st, annoVal)
 			if err != nil {
@@ -102,13 +111,13 @@ func (p *Parser) parseEnum(st *tp.StructLike, annotations []*tp.Annotation) (*Va
 				}
 			}
 			if value == nil {
-				switch node {
-				case EnumAnnotation.Const:
+				switch nodeKey {
+				case Const:
 					value = &ValidationValue{
 						ValueType:  BinaryValue,
 						TypedValue: TypedValidationValue{Binary: annoVal},
 					}
-				case EnumAnnotation.DefinedOnly, EnumAnnotation.NotNil:
+				case DefinedOnly, NotNil:
 					val, err := strconv.ParseBool(annoVal)
 					if err != nil {
 						return nil, fmt.Errorf("parse bool value failed: %w", err)
@@ -121,7 +130,7 @@ func (p *Parser) parseEnum(st *tp.StructLike, annotations []*tp.Annotation) (*Va
 					return nil, fmt.Errorf("unrecognized enum annotation key %s", annoKey)
 				}
 			}
-			exist, rule := rf.NewRule(node, value)
+			exist, rule := rf.NewRule(nodeKey, value)
 			if !exist {
 				return nil, fmt.Errorf("unrecognized enum annotation key %s", annoKey)
 			}
@@ -135,19 +144,18 @@ func (p *Parser) parseEnum(st *tp.StructLike, annotations []*tp.Annotation) (*Va
 
 func (p *Parser) parseBool(st *tp.StructLike, annotations []*tp.Annotation) (*Validation, error) {
 	validation := &Validation{ValidationType: BoolValidation}
-	specifiedKeys := []string{
-		BoolAnnotation.Const,
-		BoolAnnotation.NotNil,
-	}
-	rangeKeys := []string{}
-	rf := NewRuleFactory(specifiedKeys, rangeKeys)
+	rf := NewRuleFactory(BoolKeys)
 	for _, anno := range annotations {
 		annoKey, annoVals := anno.Key, anno.Values
 		kp, err := newKeyParser(annoKey)
 		if err != nil {
 			return nil, err
 		}
-		node := kp.next()
+		nodeStr := kp.next()
+		nodeKey, ok := KeyFromString(nodeStr)
+		if !ok {
+			return nil, fmt.Errorf("invalid key %s", nodeStr)
+		}
 		for _, annoVal := range annoVals {
 			value, err := getFieldReferenceValidation(st, annoVal)
 			if err != nil {
@@ -169,7 +177,7 @@ func (p *Parser) parseBool(st *tp.StructLike, annotations []*tp.Annotation) (*Va
 					TypedValue: TypedValidationValue{Bool: val},
 				}
 			}
-			exist, rule := rf.NewRule(node, value)
+			exist, rule := rf.NewRule(nodeKey, value)
 			if !exist {
 				return nil, fmt.Errorf("unrecognized bool annotation key %s", annoKey)
 			}
@@ -183,26 +191,18 @@ func (p *Parser) parseBool(st *tp.StructLike, annotations []*tp.Annotation) (*Va
 
 func (p *Parser) parseInt(st *tp.StructLike, annotations []*tp.Annotation) (*Validation, error) {
 	validation := &Validation{ValidationType: NumericValidation}
-	specifiedKeys := []string{
-		NumericAnnotation.Const,
-		NumericAnnotation.LessThan,
-		NumericAnnotation.LessEqual,
-		NumericAnnotation.GreatThan,
-		NumericAnnotation.GreatEqual,
-		NumericAnnotation.NotNil,
-	}
-	rangeKeys := []string{
-		NumericAnnotation.In,
-		NumericAnnotation.NotIn,
-	}
-	rf := NewRuleFactory(specifiedKeys, rangeKeys)
+	rf := NewRuleFactory(NumericKeys)
 	for _, anno := range annotations {
 		annoKey, annoVals := anno.Key, anno.Values
 		kp, err := newKeyParser(annoKey)
 		if err != nil {
 			return nil, err
 		}
-		node := kp.next()
+		nodeStr := kp.next()
+		nodeKey, ok := KeyFromString(nodeStr)
+		if !ok {
+			return nil, fmt.Errorf("invalid key %s", nodeStr)
+		}
 		for _, annoVal := range annoVals {
 			value, err := getFieldReferenceValidation(st, annoVal)
 			if err != nil {
@@ -215,14 +215,14 @@ func (p *Parser) parseInt(st *tp.StructLike, annotations []*tp.Annotation) (*Val
 				}
 			}
 			if value == nil {
-				switch node {
-				case NumericAnnotation.Const,
-					NumericAnnotation.LessThan,
-					NumericAnnotation.LessEqual,
-					NumericAnnotation.GreatThan,
-					NumericAnnotation.GreatEqual,
-					NumericAnnotation.In,
-					NumericAnnotation.NotIn:
+				switch nodeKey {
+				case Const,
+					LessThan,
+					LessEqual,
+					GreatThan,
+					GreatEqual,
+					In,
+					NotIn:
 					val, err := strconv.ParseInt(annoVal, 0, 64)
 					if err != nil {
 						return nil, fmt.Errorf("parse int value failed: %w", err)
@@ -231,7 +231,7 @@ func (p *Parser) parseInt(st *tp.StructLike, annotations []*tp.Annotation) (*Val
 						ValueType:  IntValue,
 						TypedValue: TypedValidationValue{Int: val},
 					}
-				case NumericAnnotation.NotNil:
+				case NotNil:
 					val, err := strconv.ParseBool(annoVal)
 					if err != nil {
 						return nil, fmt.Errorf("parse int value failed: %w", err)
@@ -244,7 +244,7 @@ func (p *Parser) parseInt(st *tp.StructLike, annotations []*tp.Annotation) (*Val
 					return nil, fmt.Errorf("unrecognized numeric annotation key %s", annoKey)
 				}
 			}
-			exist, rule := rf.NewRule(node, value)
+			exist, rule := rf.NewRule(nodeKey, value)
 			if !exist {
 				return nil, fmt.Errorf("unrecognized numeric annotation key %s", annoKey)
 			}
@@ -258,26 +258,18 @@ func (p *Parser) parseInt(st *tp.StructLike, annotations []*tp.Annotation) (*Val
 
 func (p *Parser) parseDouble(st *tp.StructLike, annotations []*tp.Annotation) (*Validation, error) {
 	validation := &Validation{ValidationType: NumericValidation}
-	specifiedKeys := []string{
-		NumericAnnotation.Const,
-		NumericAnnotation.LessThan,
-		NumericAnnotation.LessEqual,
-		NumericAnnotation.GreatThan,
-		NumericAnnotation.GreatEqual,
-		NumericAnnotation.NotNil,
-	}
-	rangeKeys := []string{
-		NumericAnnotation.In,
-		NumericAnnotation.NotIn,
-	}
-	rf := NewRuleFactory(specifiedKeys, rangeKeys)
+	rf := NewRuleFactory(NumericKeys)
 	for _, anno := range annotations {
 		annoKey, annoVals := anno.Key, anno.Values
 		kp, err := newKeyParser(annoKey)
 		if err != nil {
 			return nil, err
 		}
-		node := kp.next()
+		nodeStr := kp.next()
+		nodeKey, ok := KeyFromString(nodeStr)
+		if !ok {
+			return nil, fmt.Errorf("invalid key %s", nodeStr)
+		}
 		for _, annoVal := range annoVals {
 			value, err := getFieldReferenceValidation(st, annoVal)
 			if err != nil {
@@ -290,14 +282,14 @@ func (p *Parser) parseDouble(st *tp.StructLike, annotations []*tp.Annotation) (*
 				}
 			}
 			if value == nil {
-				switch node {
-				case NumericAnnotation.Const,
-					NumericAnnotation.LessThan,
-					NumericAnnotation.LessEqual,
-					NumericAnnotation.GreatThan,
-					NumericAnnotation.GreatEqual,
-					NumericAnnotation.In,
-					NumericAnnotation.NotIn:
+				switch nodeKey {
+				case Const,
+					LessThan,
+					LessEqual,
+					GreatThan,
+					GreatEqual,
+					In,
+					NotIn:
 					val, err := strconv.ParseFloat(annoVal, 10)
 					if err != nil {
 						return nil, fmt.Errorf("parse double value failed: %w", err)
@@ -306,7 +298,7 @@ func (p *Parser) parseDouble(st *tp.StructLike, annotations []*tp.Annotation) (*
 						ValueType:  DoubleValue,
 						TypedValue: TypedValidationValue{Double: val},
 					}
-				case NumericAnnotation.NotNil:
+				case NotNil:
 					val, err := strconv.ParseBool(annoVal)
 					if err != nil {
 						return nil, fmt.Errorf("parse int value failed: %w", err)
@@ -319,7 +311,7 @@ func (p *Parser) parseDouble(st *tp.StructLike, annotations []*tp.Annotation) (*
 					return nil, fmt.Errorf("unrecognized numeric annotation key %s", annoKey)
 				}
 			}
-			exist, rule := rf.NewRule(node, value)
+			exist, rule := rf.NewRule(nodeKey, value)
 			if !exist {
 				return nil, fmt.Errorf("unrecognized numeric annotation key %s", annoKey)
 			}
@@ -333,29 +325,18 @@ func (p *Parser) parseDouble(st *tp.StructLike, annotations []*tp.Annotation) (*
 
 func (p *Parser) parseBinary(st *tp.StructLike, annotations []*tp.Annotation) (*Validation, error) {
 	validation := &Validation{ValidationType: BinaryValidation}
-	specifiedKeys := []string{
-		BinaryAnnotation.Const,
-		BinaryAnnotation.Pattern,
-		BinaryAnnotation.Prefix,
-		BinaryAnnotation.Suffix,
-		BinaryAnnotation.Contains,
-		BinaryAnnotation.NotContains,
-		BinaryAnnotation.MinLen,
-		BinaryAnnotation.MaxLen,
-		BinaryAnnotation.NotNil,
-	}
-	rangeKeys := []string{
-		BinaryAnnotation.In,
-		BinaryAnnotation.NotIn,
-	}
-	rf := NewRuleFactory(specifiedKeys, rangeKeys)
+	rf := NewRuleFactory(BinaryKeys)
 	for _, anno := range annotations {
 		annoKey, annoVals := anno.Key, anno.Values
 		kp, err := newKeyParser(annoKey)
 		if err != nil {
 			return nil, err
 		}
-		node := kp.next()
+		nodeStr := kp.next()
+		nodeKey, ok := KeyFromString(nodeStr)
+		if !ok {
+			return nil, fmt.Errorf("invalid key %s", nodeStr)
+		}
 		for _, annoVal := range annoVals {
 			value, err := getFieldReferenceValidation(st, annoVal)
 			if err != nil {
@@ -368,21 +349,21 @@ func (p *Parser) parseBinary(st *tp.StructLike, annotations []*tp.Annotation) (*
 				}
 			}
 			if value == nil {
-				switch node {
-				case BinaryAnnotation.Const,
-					BinaryAnnotation.Pattern,
-					BinaryAnnotation.Prefix,
-					BinaryAnnotation.Suffix,
-					BinaryAnnotation.Contains,
-					BinaryAnnotation.NotContains,
-					BinaryAnnotation.In,
-					BinaryAnnotation.NotIn:
+				switch nodeKey {
+				case Const,
+					Pattern,
+					Prefix,
+					Suffix,
+					Contains,
+					NotContains,
+					In,
+					NotIn:
 					value = &ValidationValue{
 						ValueType:  BinaryValue,
 						TypedValue: TypedValidationValue{Binary: annoVal},
 					}
-				case BinaryAnnotation.MinLen,
-					BinaryAnnotation.MaxLen:
+				case MinSize,
+					MaxSize:
 					len, err := strconv.ParseInt(annoVal, 0, 64)
 					if err != nil {
 						return nil, err
@@ -391,7 +372,7 @@ func (p *Parser) parseBinary(st *tp.StructLike, annotations []*tp.Annotation) (*
 						ValueType:  IntValue,
 						TypedValue: TypedValidationValue{Int: len},
 					}
-				case BinaryAnnotation.NotNil:
+				case NotNil:
 					val, err := strconv.ParseBool(annoVal)
 					if err != nil {
 						return nil, err
@@ -404,7 +385,7 @@ func (p *Parser) parseBinary(st *tp.StructLike, annotations []*tp.Annotation) (*
 					return nil, fmt.Errorf("unrecognized binary annotation key %s", annoKey)
 				}
 			}
-			exist, rule := rf.NewRule(node, value)
+			exist, rule := rf.NewRule(nodeKey, value)
 			if !exist {
 				return nil, fmt.Errorf("unrecognized binary annotation key %s", annoKey)
 			}
@@ -418,12 +399,7 @@ func (p *Parser) parseBinary(st *tp.StructLike, annotations []*tp.Annotation) (*
 
 func (p *Parser) parseList(st *tp.StructLike, elemType *tp.Type, annotations []*tp.Annotation) (*Validation, error) {
 	validation := &Validation{ValidationType: ListValidation}
-	specifiedKeys := []string{
-		ListAnnotation.MinLen,
-		ListAnnotation.MaxLen,
-	}
-	rangeKeys := []string{}
-	rf := NewRuleFactory(specifiedKeys, rangeKeys)
+	rf := NewRuleFactory(ListKeys)
 	var elemAnnotations []*tp.Annotation
 	for _, anno := range annotations {
 		annoKey, annoVals := anno.Key, anno.Values
@@ -431,8 +407,12 @@ func (p *Parser) parseList(st *tp.StructLike, elemType *tp.Type, annotations []*
 		if err != nil {
 			return nil, err
 		}
-		node := kp.next()
-		if node == ListAnnotation.Elem {
+		nodeStr := kp.next()
+		nodeKey, ok := KeyFromString(nodeStr)
+		if !ok {
+			return nil, fmt.Errorf("invalid key %s", nodeStr)
+		}
+		if nodeKey == Elem {
 			elemKey := kp.toElemKey()
 			elemAnnotations = append(elemAnnotations, &tp.Annotation{Key: elemKey, Values: annoVals})
 			continue
@@ -449,9 +429,9 @@ func (p *Parser) parseList(st *tp.StructLike, elemType *tp.Type, annotations []*
 				}
 			}
 			if value == nil {
-				switch node {
-				case ListAnnotation.MinLen,
-					ListAnnotation.MaxLen:
+				switch nodeKey {
+				case MinSize,
+					MaxSize:
 					len, err := strconv.ParseInt(annoVal, 0, 64)
 					if err != nil {
 						return nil, err
@@ -464,7 +444,7 @@ func (p *Parser) parseList(st *tp.StructLike, elemType *tp.Type, annotations []*
 					return nil, fmt.Errorf("unrecognized list annotation key %s", annoKey)
 				}
 			}
-			exist, rule := rf.NewRule(node, value)
+			exist, rule := rf.NewRule(nodeKey, value)
 			if !exist {
 				return nil, fmt.Errorf("unrecognized list annotation key %s", annoKey)
 			}
@@ -479,8 +459,8 @@ func (p *Parser) parseList(st *tp.StructLike, elemType *tp.Type, annotations []*
 			return nil, fmt.Errorf("parse element annotation failed: %w", err)
 		}
 		validation.Rules = append(validation.Rules, &Rule{
-			Annotation: ListAnnotation.Elem,
-			Inner:      elemValidation,
+			Key:   Elem,
+			Inner: elemValidation,
 		})
 	}
 	return validation, nil
@@ -488,13 +468,7 @@ func (p *Parser) parseList(st *tp.StructLike, elemType *tp.Type, annotations []*
 
 func (p *Parser) parseMap(st *tp.StructLike, keyType, valType *tp.Type, annotations []*tp.Annotation) (*Validation, error) {
 	validation := &Validation{ValidationType: MapValidation}
-	specifiedKeys := []string{
-		MapAnnotation.MinPairs,
-		MapAnnotation.MaxPairs,
-		MapAnnotation.NoSparse,
-	}
-	rangeKeys := []string{}
-	rf := NewRuleFactory(specifiedKeys, rangeKeys)
+	rf := NewRuleFactory(MapKeys)
 	var keyAnnotations []*tp.Annotation
 	var valAnnotations []*tp.Annotation
 	for _, anno := range annotations {
@@ -503,12 +477,16 @@ func (p *Parser) parseMap(st *tp.StructLike, keyType, valType *tp.Type, annotati
 		if err != nil {
 			return nil, err
 		}
-		node := kp.next()
-		if node == MapAnnotation.Key {
+		nodeStr := kp.next()
+		nodeKey, ok := KeyFromString(nodeStr)
+		if !ok {
+			return nil, fmt.Errorf("invalid key %s", nodeStr)
+		}
+		if nodeKey == MapKey {
 			elemKey := kp.toElemKey()
 			keyAnnotations = append(keyAnnotations, &tp.Annotation{Key: elemKey, Values: annoVals})
 			continue
-		} else if node == MapAnnotation.Value {
+		} else if nodeKey == MapValue {
 			elemKey := kp.toElemKey()
 			valAnnotations = append(valAnnotations, &tp.Annotation{Key: elemKey, Values: annoVals})
 			continue
@@ -525,8 +503,8 @@ func (p *Parser) parseMap(st *tp.StructLike, keyType, valType *tp.Type, annotati
 				}
 			}
 			if value == nil {
-				switch node {
-				case MapAnnotation.MinPairs, MapAnnotation.MaxPairs:
+				switch nodeKey {
+				case MinSize, MaxSize:
 					len, err := strconv.ParseInt(annoVal, 0, 64)
 					if err != nil {
 						return nil, err
@@ -535,7 +513,7 @@ func (p *Parser) parseMap(st *tp.StructLike, keyType, valType *tp.Type, annotati
 						ValueType:  IntValue,
 						TypedValue: TypedValidationValue{Int: len},
 					}
-				case MapAnnotation.NoSparse:
+				case NoSparse:
 					val, err := strconv.ParseBool(annoVal)
 					if err != nil {
 						return nil, err
@@ -548,7 +526,7 @@ func (p *Parser) parseMap(st *tp.StructLike, keyType, valType *tp.Type, annotati
 					return nil, fmt.Errorf("unrecognized map annotation key %s", annoKey)
 				}
 			}
-			exist, rule := rf.NewRule(node, value)
+			exist, rule := rf.NewRule(nodeKey, value)
 			if !exist {
 				return nil, fmt.Errorf("unrecognized map annotation key %s", annoKey)
 			}
@@ -563,8 +541,8 @@ func (p *Parser) parseMap(st *tp.StructLike, keyType, valType *tp.Type, annotati
 			return nil, fmt.Errorf("parse key annotation failed: %w", err)
 		}
 		validation.Rules = append(validation.Rules, &Rule{
-			Annotation: MapAnnotation.Key,
-			Inner:      keyValidation,
+			Key:   MapKey,
+			Inner: keyValidation,
 		})
 	}
 	if len(valAnnotations) > 0 {
@@ -573,25 +551,27 @@ func (p *Parser) parseMap(st *tp.StructLike, keyType, valType *tp.Type, annotati
 			return nil, fmt.Errorf("parse value annotation failed: %w", err)
 		}
 		validation.Rules = append(validation.Rules, &Rule{
-			Annotation: MapAnnotation.Value,
-			Inner:      valValidation,
+			Key:   MapValue,
+			Inner: valValidation,
 		})
 	}
 	return validation, nil
 }
 
-func (p *Parser) parseStruct(st *tp.StructLike, annotations []*tp.Annotation) (*Validation, error) {
-	validation := &Validation{ValidationType: StructLikeValidation}
-	specifiedKeys := []string{StructLikeAnnotation.NotNil, StructLikeAnnotation.Skip}
-	rangeKeys := []string{}
-	rf := NewRuleFactory(specifiedKeys, rangeKeys)
+func (p *Parser) parseStructField(st *tp.StructLike, annotations []*tp.Annotation) (*Validation, error) {
+	validation := &Validation{ValidationType: StructLikeFieldValidation}
+	rf := NewRuleFactory(StructLikeFieldKeys)
 	for _, anno := range annotations {
 		annoKey, annoVals := anno.Key, anno.Values
 		kp, err := newKeyParser(annoKey)
 		if err != nil {
 			return nil, err
 		}
-		node := kp.next()
+		nodeStr := kp.next()
+		nodeKey, ok := KeyFromString(nodeStr)
+		if !ok {
+			return nil, fmt.Errorf("invalid key %s", nodeStr)
+		}
 		for _, annoVal := range annoVals {
 			value, err := getFieldReferenceValidation(st, annoVal)
 			if err != nil {
@@ -613,7 +593,38 @@ func (p *Parser) parseStruct(st *tp.StructLike, annotations []*tp.Annotation) (*
 					TypedValue: TypedValidationValue{Bool: val},
 				}
 			}
-			exist, rule := rf.NewRule(node, value)
+			exist, rule := rf.NewRule(nodeKey, value)
+			if !exist {
+				return nil, fmt.Errorf("unrecognized struct-like annotation key %s", annoKey)
+			}
+			if rule != nil {
+				validation.Rules = append(validation.Rules, rule)
+			}
+		}
+	}
+	return validation, nil
+}
+
+func (p *Parser) parseStruct(st *tp.StructLike, annotations []*tp.Annotation) (*Validation, error) {
+	validation := &Validation{ValidationType: StructLikeValidation}
+	rf := NewRuleFactory(StructLikeKeys)
+	for _, anno := range annotations {
+		annoKey, annoVals := anno.Key, anno.Values
+		kp, err := newKeyParser(annoKey)
+		if err != nil {
+			return nil, err
+		}
+		nodeStr := kp.next()
+		nodeKey, ok := KeyFromString(nodeStr)
+		if !ok {
+			return nil, fmt.Errorf("invalid key %s", nodeStr)
+		}
+		for _, annoVal := range annoVals {
+			value, err := getFunctionValidation(st, annoVal)
+			if err != nil {
+				p.cu.Warn(fmt.Errorf("%s parse as a function failed: %w", annoVal, err))
+			}
+			exist, rule := rf.NewRule(nodeKey, value)
 			if !exist {
 				return nil, fmt.Errorf("unrecognized struct-like annotation key %s", annoKey)
 			}
