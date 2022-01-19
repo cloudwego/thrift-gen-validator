@@ -15,7 +15,8 @@
 package validator
 
 import (
-	"fmt"
+	goParser "go/parser"
+	"go/token"
 	"strings"
 	"testing"
 
@@ -31,27 +32,43 @@ struct Numeric {
 } (vt.assert = "@equal($I64, 12)", vt.assert = "@equal(@mod($I64, 10), 0)")
 `
 
+var numericTestGoType = `
+type Numeric struct {
+	I64 int64
+	Time int64
+}
+`
+
+var stringTest = `
+struct StringTest {
+	1: string Str (vt.pattern = "\d{4}-\\d{2}-\\\d{2}")
+}
+`
+
+var stringTestGoType = `
+type StringTest struct {
+	Str String
+}
+`
+
+func parseGoFile(src string) error {
+	fset := token.NewFileSet()
+	_, err := goParser.ParseFile(fset, "", src, goParser.AllErrors)
+	return err
+}
+
 func Test_generator_generate(t *testing.T) {
-	numericAST, err := parser.ParseString("a.thrift", numericTest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = semantic.ResolveSymbols(numericAST)
-	if err != nil {
-		t.Fatal(err)
-	}
 	tests := []struct {
-		name    string
-		req     *plugin.Request
-		wants   []string
-		wantErr bool
+		name      string
+		idl       string
+		goTypeDef string
+		wants     []string
+		wantErr   bool
 	}{
 		{
-			name: "numeric",
-			req: &plugin.Request{
-				AST:        numericAST,
-				OutputPath: ".",
-			},
+			name:      "numeric",
+			idl:       numericTest,
+			goTypeDef: numericTestGoType,
 			wants: []string{
 				`if p.I64 <= int64(10) {`,
 				`_src := int(time.Now().UnixNano()) + int(1000)`,
@@ -61,10 +78,31 @@ func Test_generator_generate(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name:      "string",
+			idl:       stringTest,
+			goTypeDef: stringTestGoType,
+			wants: []string{
+				`"\\d{4}-\\d{2}-\\\\d{2}"`,
+			},
+			wantErr: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			g := newGenerator(tt.req)
+			ast, err := parser.ParseString("validator.thrift", tt.idl)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = semantic.ResolveSymbols(ast)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := &plugin.Request{
+				AST:        ast,
+				OutputPath: ".",
+			}
+			g := newGenerator(req)
 			got, err := g.generate()
 			if (err != nil) != tt.wantErr {
 				t.Errorf("generator.generate() error = %v, wantErr %v", err, tt.wantErr)
@@ -75,7 +113,9 @@ func Test_generator_generate(t *testing.T) {
 					t.Errorf("generator.generate() = %v, want %v", got[0].Content, want)
 				}
 			}
-			fmt.Println(got[0].Content)
+			if err := parseGoFile(got[0].Content + tt.goTypeDef); err != nil {
+				t.Fatal(err)
+			}
 		})
 	}
 }
