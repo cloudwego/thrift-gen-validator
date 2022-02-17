@@ -117,11 +117,16 @@ Map:
 | vt.value     | rule for map value                |
 | vt.no_sparse | map value must be non-nil pointer |
 
-Struct
+Struct Field:
 
 | Rule    |                                  |
 | ------- | -------------------------------- |
 | vt.skip | skip struct recursive validation |
+
+Struct
+| Rule      |                           |
+| --------- | ------------------------- |
+| vt.assert | expression should be true |
 
 Special Value:
 1. Field Reference. We can use another field as a validation value.
@@ -142,4 +147,69 @@ struct Example {
     2: list<string> StringList (vt.elem.max_size = "@len($MaxString)")
 }
 ```
-for now, only `len` function is available.
+| function name | arguments          | results                          | remarks               |
+| ------------- | ------------------ | -------------------------------- | --------------------- |
+| len           | 1: container filed | 1: length of container (integer) | just like `len` of go |
+
+## Example
+### Kitex Middleware Example
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	"github.com/cloudwego/kitex/client"
+	"github.com/cloudwego/kitex/pkg/endpoint"
+	"github.com/cloudwego/kitex/server"
+	"github.com/cloudwego/kitex-examples/kitex_gen/api/echo"
+)
+
+func ValidatorMW(next endpoint.Endpoint) endpoint.Endpoint {
+	return func(ctx context.Context, args, result interface{}) (err error) {
+		if gfa, ok := args.(interface{ GetFirstArgument() interface{} }); ok {
+			req := gfa.GetFirstArgument()
+			if rv, ok := req.(interface{ IsValid() error }); ok {
+				if err := rv.IsValid(); err != nil {
+					return fmt.Errorf("request data is not valid:%w", err)
+				}
+			}
+		}
+		err = next(ctx, args, result)
+		if err != nil {
+			return err
+		}
+		if gr, ok := result.(interface{ GetResult() interface{} }); ok {
+			resp := gr.GetResult()
+			if rv, ok := resp.(interface{ IsValid() error }); ok {
+				if err := rv.IsValid(); err != nil {
+					return fmt.Errorf("response data is not valid:%w", err)
+				}
+			}
+		}
+		return nil
+	}
+}
+
+// for client
+func main() {
+	cli := echo.MustNewClient("service_name", client.WithMiddleware(ValidatorMW))
+	resp, err := client.Echo(context.Background(), &api.Request{Message: "my request"})
+	if err != nil {
+		log.Println(err.Error())
+	} else {
+		log.Println(resp)
+	}
+}
+
+// for server
+func main() {
+	svr := echo.NewServer(new(EchoImpl), server.WithMiddleware(ValidatorMW))
+	err := svr.Run()
+	if err != nil {
+		log.Println(err.Error())
+	}
+}
+```
