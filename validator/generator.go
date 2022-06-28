@@ -1020,9 +1020,10 @@ func (g *generator) generateFunction(st *golang.StructLike, f *parser.ToolFuncti
 		g.writeLinef("fmt.Sprintf(")
 		var args []string
 		for _, arg := range f.Arguments {
-			if arg.ValueType == parser.BinaryValue {
+			switch arg.ValueType {
+			case parser.BinaryValue:
 				args = append(args, "\""+arg.TypedValue.Binary+"\"")
-			} else if arg.ValueType == parser.FieldReferenceValue {
+			case parser.FieldReferenceValue:
 				f := st.Field(arg.TypedValue.FieldReference.Name)
 				reference := "p." + f.GoName().String()
 				if f.GoTypeName().IsPointer() {
@@ -1036,6 +1037,8 @@ func (g *generator) generateFunction(st *golang.StructLike, f *parser.ToolFuncti
 	case "equal", "mod", "add":
 		genArg := func(arg *parser.ValidationValue) error {
 			switch arg.ValueType {
+			case parser.DoubleValue:
+				g.writef("float64(%f)", arg.TypedValue.Double)
 			case parser.IntValue:
 				g.writef("int(%d)", arg.TypedValue.Int)
 			case parser.FunctionValue:

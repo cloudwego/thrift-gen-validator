@@ -290,7 +290,7 @@ func (p *Parser) parseDouble(st *tp.StructLike, annotations []*tp.Annotation) (*
 					GreatEqual,
 					In,
 					NotIn:
-					val, err := strconv.ParseFloat(annoVal, 10)
+					val, err := strconv.ParseFloat(annoVal, 64)
 					if err != nil {
 						return nil, fmt.Errorf("parse double value failed: %w", err)
 					}
