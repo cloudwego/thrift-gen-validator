@@ -1,8 +1,10 @@
 # thrift-gen-validator
-thrift-gen-validator is a thriftgo plugin to generate struct validators.   
+
+thrift-gen-validator is a thriftgo plugin to generate struct validators.
 Users can define validation rule for struct-like(struct/union/exception) in Thrift file, then the generator will generate `IsValid() error` method for those structs.
 
 for example:
+
 ```Thrift
 enum MapKey {
     A, B, C, D, E, F
@@ -15,27 +17,29 @@ struct Example {
     4: map<MapKey, string> KeyValues (vt.key.defined_only = "true") // value of KeyValues'key must be defined in MapKey
 }
 ```
+
 generated method:
+
 ```go
 func (p *Example) IsValid() error {
-	if len(p.Message) < int(30) {
-		return fmt.Errorf("field Message min_len rule failed, current value: %d", len(p.Message))
-	}
-	if p.ID < int32(10000) {
-		return fmt.Errorf("field ID ge rule failed, current value: %v", p.ID)
-	}
-	for i := 0; i < len(p.Values); i++ {
-		_elem := p.Values[i]
-		if _elem <= float64(0.25) {
-			return fmt.Errorf("field _elem gt rule failed, current value: %v", _elem)
-		}
-	}
-	for k := range p.KeyValues {
-		if k.String() == "<UNSET>" {
-			return fmt.Errorf("field k defined_only rule failed")
-		}
-	}
-	return nil
+ if len(p.Message) < int(30) {
+  return fmt.Errorf("field Message min_len rule failed, current value: %d", len(p.Message))
+ }
+ if p.ID < int32(10000) {
+  return fmt.Errorf("field ID ge rule failed, current value: %v", p.ID)
+ }
+ for i := 0; i < len(p.Values); i++ {
+  _elem := p.Values[i]
+  if _elem <= float64(0.25) {
+   return fmt.Errorf("field _elem gt rule failed, current value: %v", _elem)
+  }
+ }
+ for k := range p.KeyValues {
+  if k.String() == "<UNSET>" {
+   return fmt.Errorf("field k defined_only rule failed")
+  }
+ }
+ return nil
 }
 ```
 
@@ -54,6 +58,7 @@ func (p *Example) IsValid() error {
 `kitex --thrift-plugin validator -service a.b.c my.thrift`
 
 ## Feature Matrix
+
 prefix `vt`, short for "validation"
 Numeric(i8/i16/i32/i64/double):
 
@@ -129,10 +134,12 @@ Struct
 | vt.assert | expression should be true |
 
 Special Value:
+
 1. Field Reference. We can use another field as a validation value.
 2. Validation Function. We can use those functions to provide extensive validation ability.
 
 Field Reference Example:
+
 ```Thrift
 struct Example {
     1: string StringFoo (vt.max_size = "$MaxStringSize")
@@ -141,12 +148,14 @@ struct Example {
 ```
 
 Validation Function:
+
 ```Thrift
 struct Example {
     1: string MaxString
     2: list<string> StringList (vt.elem.max_size = "@len($MaxString)")
 }
 ```
+
 | function name | arguments                                             | results                                                | remarks                                 |
 | ------------- | ----------------------------------------------------- | ------------------------------------------------------ | --------------------------------------- |
 | len           | 1: container filed                                    | 1: length of container (integer)                       | just like `len` of go                   |
@@ -157,64 +166,66 @@ struct Example {
 | add           | 1, 2: both are numeric or string                      | 1: sum of two arguments (integer or float64 or string) | just like `+` of go                     |
 
 ## Example
+
 ### Kitex Middleware Example
+
 ```go
 package main
 
 import (
-	"context"
-	"fmt"
-	"log"
+ "context"
+ "fmt"
+ "log"
 
-	"github.com/cloudwego/kitex/client"
-	"github.com/cloudwego/kitex/pkg/endpoint"
-	"github.com/cloudwego/kitex/server"
-	"github.com/cloudwego/kitex-examples/kitex_gen/api/echo"
+ "github.com/cloudwego/kitex/client"
+ "github.com/cloudwego/kitex/pkg/endpoint"
+ "github.com/cloudwego/kitex/server"
+ "github.com/cloudwego/kitex-examples/kitex_gen/api/echo"
 )
 
 func ValidatorMW(next endpoint.Endpoint) endpoint.Endpoint {
-	return func(ctx context.Context, args, result interface{}) (err error) {
-		if gfa, ok := args.(interface{ GetFirstArgument() interface{} }); ok {
-			req := gfa.GetFirstArgument()
-			if rv, ok := req.(interface{ IsValid() error }); ok {
-				if err := rv.IsValid(); err != nil {
-					return fmt.Errorf("request data is not valid:%w", err)
-				}
-			}
-		}
-		err = next(ctx, args, result)
-		if err != nil {
-			return err
-		}
-		if gr, ok := result.(interface{ GetResult() interface{} }); ok {
-			resp := gr.GetResult()
-			if rv, ok := resp.(interface{ IsValid() error }); ok {
-				if err := rv.IsValid(); err != nil {
-					return fmt.Errorf("response data is not valid:%w", err)
-				}
-			}
-		}
-		return nil
-	}
+ return func(ctx context.Context, args, result interface{}) (err error) {
+  if gfa, ok := args.(interface{ GetFirstArgument() interface{} }); ok {
+   req := gfa.GetFirstArgument()
+   if rv, ok := req.(interface{ IsValid() error }); ok {
+    if err := rv.IsValid(); err != nil {
+     return fmt.Errorf("request data is not valid:%w", err)
+    }
+   }
+  }
+  err = next(ctx, args, result)
+  if err != nil {
+   return err
+  }
+  if gr, ok := result.(interface{ GetResult() interface{} }); ok {
+   resp := gr.GetResult()
+   if rv, ok := resp.(interface{ IsValid() error }); ok {
+    if err := rv.IsValid(); err != nil {
+     return fmt.Errorf("response data is not valid:%w", err)
+    }
+   }
+  }
+  return nil
+ }
 }
 
 // for client
 func main() {
-	cli := echo.MustNewClient("service_name", client.WithMiddleware(ValidatorMW))
-	resp, err := client.Echo(context.Background(), &api.Request{Message: "my request"})
-	if err != nil {
-		log.Println(err.Error())
-	} else {
-		log.Println(resp)
-	}
+ cli := echo.MustNewClient("service_name", client.WithMiddleware(ValidatorMW))
+ resp, err := client.Echo(context.Background(), &api.Request{Message: "my request"})
+ if err != nil {
+  log.Println(err.Error())
+ } else {
+  log.Println(resp)
+ }
 }
 
 // for server
 func main() {
-	svr := echo.NewServer(new(EchoImpl), server.WithMiddleware(ValidatorMW))
-	err := svr.Run()
-	if err != nil {
-		log.Println(err.Error())
-	}
+ svr := echo.NewServer(new(EchoImpl), server.WithMiddleware(ValidatorMW))
+ err := svr.Run()
+ if err != nil {
+  log.Println(err.Error())
+ }
 }
 ```
