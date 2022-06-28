@@ -153,7 +153,7 @@ struct Example {
 | sprintf       | 1: format string <br /> 2+: arguments matching format | 1: formatted string (integer)                          | just like `fmt.Sprintf` of go           |
 | now_unix_nano | none                                                  | 1: nano seconds (int64)                                | just like `time.Now().UnixNano()` of go |
 | equal         | 1, 2: comparable values                               | 1: whether two arguments is equal (bool)               | just like `==` of go                    |
-| mod           | 1, 2: integer                                         | 1: reminder of $1 / $2 (integer)                       | just like `%` of go                     |
+| mod           | 1, 2: integer                                         | 1: remainder of $1 / $2 (integer)                      | just like `%` of go                     |
 | add           | 1, 2: both are numeric or string                      | 1: sum of two arguments (integer or float64 or string) | just like `+` of go                     |
 
 ## Example
