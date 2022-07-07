@@ -12,7 +12,7 @@ enum MapKey {
 
 struct Example {
     1: string Message (vt.min_size = "30") // length of Message should be greater than or equal to 30
-    2: i32 ID (vt.ge = "10000") // ID must be greater than or euqal to 10000
+    2: i32 ID (vt.ge = "10000") // ID must be greater than or equal to 10000
     3: list<double> Values (vt.elem.gt = "0.25") // element of Values must be greater than 0.25
     4: map<MapKey, string> KeyValues (vt.key.defined_only = "true") // value of KeyValues'key must be defined in MapKey
 }
