@@ -22,24 +22,24 @@ generated method:
 
 ```go
 func (p *Example) IsValid() error {
- if len(p.Message) < int(30) {
-  return fmt.Errorf("field Message min_len rule failed, current value: %d", len(p.Message))
- }
- if p.ID < int32(10000) {
-  return fmt.Errorf("field ID ge rule failed, current value: %v", p.ID)
- }
- for i := 0; i < len(p.Values); i++ {
-  _elem := p.Values[i]
-  if _elem <= float64(0.25) {
-   return fmt.Errorf("field _elem gt rule failed, current value: %v", _elem)
-  }
- }
- for k := range p.KeyValues {
-  if k.String() == "<UNSET>" {
-   return fmt.Errorf("field k defined_only rule failed")
-  }
- }
- return nil
+	if len(p.Message) < int(30) {
+		return fmt.Errorf("field Message min_len rule failed, current value: %d", len(p.Message))
+	}
+	if p.ID < int32(10000) {
+		return fmt.Errorf("field ID ge rule failed, current value: %v", p.ID)
+	}
+	for i := 0; i < len(p.Values); i++ {
+		_elem := p.Values[i]
+		if _elem <= float64(0.25) {
+			return fmt.Errorf("field _elem gt rule failed, current value: %v", _elem)
+		}
+	}
+	for k := range p.KeyValues {
+		if k.String() == "<UNSET>" {
+			return fmt.Errorf("field k defined_only rule failed")
+		}
+	}
+	return nil
 }
 ```
 
@@ -173,59 +173,60 @@ struct Example {
 package main
 
 import (
- "context"
- "fmt"
- "log"
+	"context"
+	"fmt"
+	"log"
 
- "github.com/cloudwego/kitex/client"
- "github.com/cloudwego/kitex/pkg/endpoint"
- "github.com/cloudwego/kitex/server"
- "github.com/cloudwego/kitex-examples/kitex_gen/api/echo"
+	"github.com/cloudwego/kitex-examples/kitex_gen/api"
+	"github.com/cloudwego/kitex-examples/kitex_gen/api/echo"
+	"github.com/cloudwego/kitex/client"
+	"github.com/cloudwego/kitex/pkg/endpoint"
+	"github.com/cloudwego/kitex/server"
 )
 
 func ValidatorMW(next endpoint.Endpoint) endpoint.Endpoint {
- return func(ctx context.Context, args, result interface{}) (err error) {
-  if gfa, ok := args.(interface{ GetFirstArgument() interface{} }); ok {
-   req := gfa.GetFirstArgument()
-   if rv, ok := req.(interface{ IsValid() error }); ok {
-    if err := rv.IsValid(); err != nil {
-     return fmt.Errorf("request data is not valid:%w", err)
-    }
-   }
-  }
-  err = next(ctx, args, result)
-  if err != nil {
-   return err
-  }
-  if gr, ok := result.(interface{ GetResult() interface{} }); ok {
-   resp := gr.GetResult()
-   if rv, ok := resp.(interface{ IsValid() error }); ok {
-    if err := rv.IsValid(); err != nil {
-     return fmt.Errorf("response data is not valid:%w", err)
-    }
-   }
-  }
-  return nil
- }
+	return func(ctx context.Context, args, result interface{}) (err error) {
+		if gfa, ok := args.(interface{ GetFirstArgument() interface{} }); ok {
+			req := gfa.GetFirstArgument()
+			if rv, ok := req.(interface{ IsValid() error }); ok {
+				if err := rv.IsValid(); err != nil {
+					return fmt.Errorf("request data is not valid:%w", err)
+				}
+			}
+		}
+		err = next(ctx, args, result)
+		if err != nil {
+			return err
+		}
+		if gr, ok := result.(interface{ GetResult() interface{} }); ok {
+			resp := gr.GetResult()
+			if rv, ok := resp.(interface{ IsValid() error }); ok {
+				if err := rv.IsValid(); err != nil {
+					return fmt.Errorf("response data is not valid:%w", err)
+				}
+			}
+		}
+		return nil
+	}
 }
 
 // for client
 func main() {
- cli := echo.MustNewClient("service_name", client.WithMiddleware(ValidatorMW))
- resp, err := client.Echo(context.Background(), &api.Request{Message: "my request"})
- if err != nil {
-  log.Println(err.Error())
- } else {
-  log.Println(resp)
- }
+	cli := echo.MustNewClient("service_name", client.WithMiddleware(ValidatorMW))
+	resp, err := client.Echo(context.Background(), &api.Request{Message: "my request"})
+	if err != nil {
+		log.Println(err.Error())
+	} else {
+		log.Println(resp)
+	}
 }
 
 // for server
 func main() {
- svr := echo.NewServer(new(EchoImpl), server.WithMiddleware(ValidatorMW))
- err := svr.Run()
- if err != nil {
-  log.Println(err.Error())
- }
+	svr := echo.NewServer(new(EchoImpl), server.WithMiddleware(ValidatorMW))
+	err := svr.Run()
+	if err != nil {
+		log.Println(err.Error())
+	}
 }
 ```
