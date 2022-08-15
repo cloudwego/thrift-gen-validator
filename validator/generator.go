@@ -23,6 +23,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/cloudwego/thrift-gen-validator/config"
 	"github.com/cloudwego/thrift-gen-validator/parser"
 	"github.com/cloudwego/thriftgo/generator/backend"
 	"github.com/cloudwego/thriftgo/generator/golang"
@@ -34,17 +35,25 @@ import (
 var Version string
 
 type generator struct {
-	*bytes.Buffer
-	*plugin.Request
+	config    *config.Config
+	request   *plugin.Request
 	utils     *golang.CodeUtils
-	warnings  []string
+	buffer    *bytes.Buffer
 	indentNum int
+	warnings  []string
+	usedFuncs map[*template.Template]bool
 }
 
-func newGenerator(req *plugin.Request) *generator {
+func newGenerator(req *plugin.Request) (*generator, error) {
+	var cfg config.Config
+	if err := cfg.Unpack(req.PluginParameters); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal plugin parameters: %v", err)
+	}
 	g := &generator{
-		Buffer:  &bytes.Buffer{},
-		Request: req,
+		buffer:    &bytes.Buffer{},
+		config:    &cfg,
+		request:   req,
+		usedFuncs: make(map[*template.Template]bool),
 	}
 	lf := backend.LogFunc{
 		Info: func(v ...interface{}) {},
@@ -57,25 +66,25 @@ func newGenerator(req *plugin.Request) *generator {
 	}
 	g.utils = golang.NewCodeUtils(lf)
 	g.utils.HandleOptions(req.GeneratorParameters)
-	return g
+	return g, nil
+}
+
+func (g *generator) write(str string) {
+	g.buffer.WriteString(str)
 }
 
 func (g *generator) writeLine(str string) {
 	for i := 0; i < g.indentNum; i++ {
-		g.WriteString("\t")
+		g.buffer.WriteString("\t")
 	}
-	g.WriteString(str + "\n")
+	g.buffer.WriteString(str + "\n")
 }
 
 func (g *generator) writeLinef(format string, args ...interface{}) {
 	for i := 0; i < g.indentNum; i++ {
-		g.WriteString("\t")
+		g.buffer.WriteString("\t")
 	}
-	g.WriteString(fmt.Sprintf(format, args...))
-}
-
-func (g *generator) writef(format string, args ...interface{}) {
-	g.WriteString(fmt.Sprintf(format, args...))
+	g.buffer.WriteString(fmt.Sprintf(format, args...))
 }
 
 func (g *generator) indent() {
@@ -86,86 +95,83 @@ func (g *generator) unindent() {
 	g.indentNum--
 }
 
-func (g *generator) mkValidateContexts(ast *tp.Thrift, resolver *golang.Resolver, st *golang.StructLike) ([]*ValidateContext, error) {
-	var ret []*ValidateContext
-	p := parser.NewParser(g.utils)
-	structLikeValidation, fieldValidations, err := p.Parse(st.StructLike)
-	if err != nil {
-		return nil, err
-	}
-	ids := map[string]int{}
-	for _, f := range st.Fields() {
-		rwctx, err := g.utils.MkRWCtx(g.utils.RootScope(), f)
-		if err != nil {
-			return nil, err
-		}
-		ret = append(ret, &ValidateContext{
-			AST:              ast,
-			Resolver:         resolver,
-			FieldName:        f.GoName().String(),
-			RawFieldName:     f.Field.Name,
-			StructLike:       st,
-			ReadWriteContext: rwctx,
-			Validation:       fieldValidations[f.Field],
-			IsOptional:       f.Requiredness.IsOptional(),
-			ids:              ids,
-		})
-	}
-	ret = append(ret, &ValidateContext{
-		AST:        ast,
-		Resolver:   resolver,
-		StructLike: st,
-		Validation: structLikeValidation,
-	})
-	return ret, nil
-}
-
 func (g *generator) generate() ([]*plugin.Generated, error) {
 	var ret []*plugin.Generated
 	// generate file header
-	for ast := range g.Request.AST.DepthFirstSearch() {
-		g.Buffer.Reset()
+	for ast := range g.request.AST.DepthFirstSearch() {
+		g.buffer.Reset()
 		scope, err := golang.BuildScope(g.utils, ast)
 		if err != nil {
 			return nil, err
 		}
 		g.utils.SetRootScope(scope)
-		t := template.New("file")
-		tl, err := t.Parse(file)
+		resolver := golang.NewResolver(g.utils.RootScope(), g.utils)
+		// generate validation
+		if err := g.generateBody(ast, resolver); err != nil {
+			return nil, err
+		}
+		header, err := g.renderHeader(ast)
 		if err != nil {
 			return nil, err
 		}
-		tl.Execute(g.Buffer, &struct {
-			Version string
-			PkgName string
-		}{
-			Version: Version,
-			PkgName: g.utils.NamespaceToPackage(ast.GetNamespaceOrReferenceName("go")),
-		})
-		resolver := golang.NewResolver(g.utils.RootScope(), g.utils)
-		// generate validation
-		if err := g.generateValidation(ast, resolver); err != nil {
-			return nil, err
-		}
+		content := header + g.buffer.String()
 		fp := g.utils.GetFilePath(ast)
 		fp = strings.TrimSuffix(fp, ".go")
 		fp += "_validator.go"
-		full := filepath.Join(g.Request.OutputPath, fp)
+		full := filepath.Join(g.request.OutputPath, fp)
 		ret = append(ret, &plugin.Generated{
-			Content: g.Buffer.String(),
+			Content: content,
 			Name:    &full,
 		})
 	}
 	return ret, nil
 }
 
-func (g *generator) generateValidation(ast *tp.Thrift, resolver *golang.Resolver) error {
+func (g *generator) renderHeader(ast *tp.Thrift) (string, error) {
+	var header bytes.Buffer
+	t := template.New("file")
+	tl, err := t.Parse(file)
+	if err != nil {
+		return "", err
+	}
+	var importBuf, importGuardBuf bytes.Buffer
+	for tpl := range g.usedFuncs {
+		if strings.Contains(tpl.DefinedTemplates(), "Import") {
+			if err := tpl.ExecuteTemplate(&importBuf, "Import", ast); err != nil {
+				g.utils.Warn(fmt.Sprintf("failed to Imports template of %s, err: %v", tpl.Name(), err))
+			}
+		}
+		if strings.Contains(tpl.DefinedTemplates(), "ImportGuard") {
+			if err = tpl.ExecuteTemplate(&importGuardBuf, "ImportGuard", ast); err != nil {
+				g.utils.Warn(fmt.Sprintf("failed to ImportGuards template of %s, err: %v", tpl.Name(), err))
+			}
+		}
+	}
+	importStr := strings.TrimSpace(importBuf.String())
+	importStr = strings.ReplaceAll(importStr, "\n\n", "\n")
+	importGuardStr := strings.TrimSpace(importGuardBuf.String())
+	importGuardStr = strings.ReplaceAll(importGuardStr, "\n\n", "\n")
+	tl.Execute(&header, &struct {
+		Version     string
+		PkgName     string
+		Import      string
+		ImportGuard string
+	}{
+		Import:      importStr,
+		ImportGuard: importGuardStr,
+		Version:     Version,
+		PkgName:     g.utils.NamespaceToPackage(ast.GetNamespaceOrReferenceName("go")),
+	})
+	return header.String(), nil
+}
+
+func (g *generator) generateBody(ast *tp.Thrift, resolver *golang.Resolver) error {
 	scope, err := golang.BuildScope(g.utils, ast)
 	if err != nil {
 		return err
 	}
 	for _, st := range scope.StructLikes() {
-		vcs, err := g.mkValidateContexts(ast, resolver, st)
+		vcs, err := mkStructLikeContext(g.utils, ast, resolver, st)
 		if err != nil {
 			return err
 		}
@@ -266,9 +272,12 @@ func (g *generator) generateStructLikeValidation(vc *ValidateContext) error {
 	for _, rule := range vc.Rules {
 		switch rule.Key {
 		case parser.Assert:
-			g.writeLinef("if !(")
-			g.generateFunction(vc.StructLike, rule.Specified.TypedValue.Function)
-			g.writef(") {\n")
+			source := vc.GenID("_assert")
+			err := g.generateFunction(source, vc, rule.Specified.TypedValue.Function)
+			if err != nil {
+				return err
+			}
+			g.writeLinef("if !(" + source + ") {\n")
 			g.indent()
 			g.writeLine("return fmt.Errorf(\"struct assertion failed\")")
 			g.unindent()
@@ -413,14 +422,11 @@ func (g *generator) generateBoolValidation(vc *ValidateContext) error {
 		switch rule.Key {
 		case parser.Const:
 			vt := rule.Specified
-			if vt.ValueType == parser.BoolValue {
+			switch vt.ValueType {
+			case parser.BoolValue:
 				source = strconv.FormatBool(vt.TypedValue.Bool)
-			} else if vt.ValueType == parser.FieldReferenceValue {
-				f := vc.StructLike.Field(vt.TypedValue.FieldReference.Name)
-				source = "p." + f.GoName().String()
-				if f.GoTypeName().IsPointer() {
-					source = "*" + source
-				}
+			case parser.FieldReferenceValue:
+				source = vt.TypedValue.GetFieldReferenceName("p.", vc.StructLike)
 			}
 		case parser.NotNil:
 			// do nothing
@@ -449,32 +455,30 @@ func (g *generator) generateNumericValidation(vc *ValidateContext) error {
 	for _, rule := range vc.Rules {
 		// construct target
 		target = vc.Target
-		typeName = vc.ReadWriteContext.TypeName.String()
+		typeName = vc.TypeName.String()
 		if vc.IsPointer && rule.Key != parser.NotNil {
 			target = "*" + target
-			typeName = vc.ReadWriteContext.TypeName.Deref().String()
+			typeName = vc.TypeName.Deref().String()
 		}
 		// construct source
 		switch rule.Key {
 		case parser.Const, parser.LessThan, parser.LessEqual, parser.GreatThan, parser.GreatEqual:
 			vt := rule.Specified
-			if vt.ValueType == parser.IntValue {
+			switch vt.ValueType {
+			case parser.IntValue:
 				source = strconv.FormatInt(vt.TypedValue.Int, 10)
-			} else if vt.ValueType == parser.DoubleValue {
+			case parser.DoubleValue:
 				source = strconv.FormatFloat(vt.TypedValue.Double, 'f', -1, 64)
-			} else if vt.ValueType == parser.FieldReferenceValue {
-				f := vc.StructLike.Field(vt.TypedValue.FieldReference.Name)
-				source = "p." + f.GoName().String()
-				if f.GoTypeName().IsPointer() {
-					source = "*" + source
-				}
-			} else if vt.ValueType == parser.FunctionValue {
+			case parser.FieldReferenceValue:
+				source = vt.TypedValue.GetFieldReferenceName("p.", vc.StructLike)
+			case parser.FunctionValue:
 				source = vc.GenID("_src")
-				g.writeLinef("%s := ", source)
-				if err := g.generateFunction(vc.StructLike, vt.TypedValue.Function); err != nil {
+				if err := g.generateFunction(source, vc, vt.TypedValue.Function); err != nil {
 					return err
 				}
-				g.writef("\n")
+				g.write("\n")
+			default:
+				return fmt.Errorf("unsupported value type for %s in numeric validation", parser.KeyString[rule.Key])
 			}
 		case parser.In, parser.NotIn:
 			source = vc.GenID("_src")
@@ -565,19 +569,15 @@ func (g *generator) generateBinaryValidation(vc *ValidateContext) error {
 		switch rule.Key {
 		case parser.Const, parser.Prefix, parser.Suffix, parser.Contains, parser.NotContains, parser.Pattern:
 			vt := rule.Specified
-			if vt.ValueType == parser.FieldReferenceValue {
-				f := vc.StructLike.Field(vt.TypedValue.FieldReference.Name)
-				source = "p." + f.GoName().String()
-				if f.GoTypeName().IsPointer() {
-					source = "*" + source
-				}
-			} else if vt.ValueType == parser.FunctionValue {
+			switch vt.ValueType {
+			case parser.FieldReferenceValue:
+				source = vt.TypedValue.GetFieldReferenceName("p.", vc.StructLike)
+			case parser.FunctionValue:
 				source = vc.GenID("_src")
-				g.writeLinef("%s := ", source)
-				if err := g.generateFunction(vc.StructLike, vt.TypedValue.Function); err != nil {
+				if err := g.generateFunction(source, vc, vt.TypedValue.Function); err != nil {
 					return err
 				}
-			} else {
+			default:
 				source = vc.GenID("_src")
 				if vc.TypeID == "String" || rule.Key == parser.Pattern {
 					g.writeLine(source + " := \"" + vt.TypedValue.Binary + "\"")
@@ -587,18 +587,14 @@ func (g *generator) generateBinaryValidation(vc *ValidateContext) error {
 			}
 		case parser.MinSize, parser.MaxSize:
 			vt := rule.Specified
-			if vt.ValueType == parser.FieldReferenceValue {
-				f := vc.StructLike.Field(vt.TypedValue.FieldReference.Name)
-				source = "p." + f.GoName().String()
-				if f.GoTypeName().IsPointer() {
-					source = "*" + source
-				}
-			} else if vt.ValueType == parser.IntValue {
+			switch vt.ValueType {
+			case parser.FieldReferenceValue:
+				source = vt.TypedValue.GetFieldReferenceName("p.", vc.StructLike)
+			case parser.IntValue:
 				source = strconv.FormatInt(vt.TypedValue.Int, 10)
-			} else if vt.ValueType == parser.FunctionValue {
+			case parser.FunctionValue:
 				source = vc.GenID("_src")
-				g.writeLinef("%s := ", source)
-				if err := g.generateFunction(vc.StructLike, vt.TypedValue.Function); err != nil {
+				if err := g.generateFunction(source, vc, vt.TypedValue.Function); err != nil {
 					return err
 				}
 			}
@@ -746,18 +742,14 @@ func (g *generator) generateListValidation(vc *ValidateContext) error {
 		switch rule.Key {
 		case parser.MinSize, parser.MaxSize:
 			vt := rule.Specified
-			if vt.ValueType == parser.IntValue {
+			switch vt.ValueType {
+			case parser.IntValue:
 				source = strconv.FormatInt(vt.TypedValue.Int, 10)
-			} else if vt.ValueType == parser.FieldReferenceValue {
-				f := vc.StructLike.Field(vt.TypedValue.FieldReference.Name)
-				source = "p." + f.GoName().String()
-				if f.GoTypeName().IsPointer() {
-					source = "*" + source
-				}
-			} else if vt.ValueType == parser.FunctionValue {
+			case parser.FieldReferenceValue:
+				source = vt.TypedValue.GetFieldReferenceName("p.", vc.StructLike)
+			case parser.FunctionValue:
 				source = vc.GenID("_src")
-				g.writeLinef("%s := ", source)
-				if err := g.generateFunction(vc.StructLike, vt.TypedValue.Function); err != nil {
+				if err := g.generateFunction(source, vc, vt.TypedValue.Function); err != nil {
 					return err
 				}
 			}
@@ -817,31 +809,24 @@ func (g *generator) generateMapValidation(vc *ValidateContext) error {
 		switch rule.Key {
 		case parser.MinSize, parser.MaxSize:
 			vt := rule.Specified
-			if vt.ValueType == parser.IntValue {
+			switch vt.ValueType {
+			case parser.IntValue:
 				source = strconv.FormatInt(vt.TypedValue.Int, 10)
-			} else if vt.ValueType == parser.FieldReferenceValue {
-				f := vc.StructLike.Field(vt.TypedValue.FieldReference.Name)
-				source = "p." + f.GoName().String()
-				if f.GoTypeName().IsPointer() {
-					source = "*" + source
-				}
-			} else if vt.ValueType == parser.FunctionValue {
+			case parser.FieldReferenceValue:
+				source = vt.TypedValue.GetFieldReferenceName("p.", vc.StructLike)
+			case parser.FunctionValue:
 				source = vc.GenID("_src")
-				g.writeLinef("%s := ", source)
-				if err := g.generateFunction(vc.StructLike, vt.TypedValue.Function); err != nil {
+				if err := g.generateFunction(source, vc, vt.TypedValue.Function); err != nil {
 					return err
 				}
 			}
 		case parser.NoSparse:
 			vt := rule.Specified
-			if vt.ValueType == parser.BoolValue {
+			switch vt.ValueType {
+			case parser.BoolValue:
 				source = strconv.FormatBool(vt.TypedValue.Bool)
-			} else if vt.ValueType == parser.FieldReferenceValue {
-				f := vc.StructLike.Field(vt.TypedValue.FieldReference.Name)
-				source = "p." + f.GoName().String()
-				if f.GoTypeName().IsPointer() {
-					source = "*" + source
-				}
+			case parser.FieldReferenceValue:
+				source = vt.TypedValue.GetFieldReferenceName("p.", vc.StructLike)
 			}
 		case parser.MapKey, parser.MapValue:
 			// do nothing
@@ -948,11 +933,7 @@ func (g *generator) generateSlice(st *golang.StructLike, name, typeID string, va
 		for _, val := range vals {
 			var source string
 			if val.ValueType == parser.FieldReferenceValue {
-				f := st.Field(val.TypedValue.FieldReference.Name)
-				source = "p." + f.GoName().String()
-				if f.GoTypeName().IsPointer() {
-					source = "*" + source
-				}
+				source = val.TypedValue.GetFieldReferenceName("p.", st)
 			} else {
 				source = strconv.FormatInt(val.TypedValue.Int, 10)
 			}
@@ -962,11 +943,7 @@ func (g *generator) generateSlice(st *golang.StructLike, name, typeID string, va
 		for _, val := range vals {
 			var source string
 			if val.ValueType == parser.FieldReferenceValue {
-				f := st.Field(val.TypedValue.FieldReference.Name)
-				source = "p." + f.GoName().String()
-				if f.GoTypeName().IsPointer() {
-					source = "*" + source
-				}
+				source = val.TypedValue.GetFieldReferenceName("p.", st)
 			} else {
 				source = strconv.FormatFloat(val.TypedValue.Double, 'f', -1, 64)
 			}
@@ -976,11 +953,7 @@ func (g *generator) generateSlice(st *golang.StructLike, name, typeID string, va
 		for _, val := range vals {
 			var source string
 			if val.ValueType == parser.FieldReferenceValue {
-				f := st.Field(val.TypedValue.FieldReference.Name)
-				source = "p." + f.GoName().String()
-				if f.GoTypeName().IsPointer() {
-					source = "*" + source
-				}
+				source = val.TypedValue.GetFieldReferenceName("p.", st)
 			} else {
 				source = "\"" + val.TypedValue.Binary + "\""
 			}
@@ -990,11 +963,7 @@ func (g *generator) generateSlice(st *golang.StructLike, name, typeID string, va
 		for _, val := range vals {
 			var source string
 			if val.ValueType == parser.FieldReferenceValue {
-				f := st.Field(val.TypedValue.FieldReference.Name)
-				source = "p." + f.GoName().String()
-				if f.GoTypeName().IsPointer() {
-					source = "*" + source
-				}
+				source = val.TypedValue.GetFieldReferenceName("p.", st)
 			} else {
 				source = "[]byte(\"" + val.TypedValue.Binary + "\")"
 			}
@@ -1007,79 +976,85 @@ func (g *generator) generateSlice(st *golang.StructLike, name, typeID string, va
 	return nil
 }
 
-func (g *generator) generateFunction(st *golang.StructLike, f *parser.ToolFunction) error {
+func (g *generator) renderValidationValue(vc *ValidateContext, val *parser.ValidationValue) (string, error) {
+	switch val.ValueType {
+	case parser.DoubleValue:
+		return fmt.Sprintf("float64(%f)", val.TypedValue.Double), nil
+	case parser.IntValue:
+		return fmt.Sprintf("int64(%d)", val.TypedValue.Int), nil
+	case parser.FunctionValue:
+		source := vc.GenID("_src")
+		g.generateFunction(source, vc, val.TypedValue.Function)
+		return source, nil
+	case parser.FieldReferenceValue:
+		return val.TypedValue.GetFieldReferenceName("p.", vc.StructLike), nil
+	default:
+		return "", fmt.Errorf("value type %s is not supported for equal", val.ValueType)
+	}
+}
+
+func (g *generator) generateFunction(source string, vc *ValidateContext, f *parser.ToolFunction) error {
 	switch f.Name {
 	case "len":
-		f := st.Field(f.Arguments[0].TypedValue.FieldReference.Name)
-		reference := "p." + f.GoName().String()
-		if f.GoTypeName().IsPointer() {
-			reference = "*" + reference
-		}
-		g.writeLinef("len(%s)\n", reference)
+		g.writeLinef(source+" := len(%s)\n", f.Arguments[0].TypedValue.GetFieldReferenceName("p.", vc.StructLike))
 	case "sprintf":
-		g.writeLinef("fmt.Sprintf(")
+		g.writeLinef(source + " := fmt.Sprintf(")
 		var args []string
 		for _, arg := range f.Arguments {
 			switch arg.ValueType {
 			case parser.BinaryValue:
 				args = append(args, "\""+arg.TypedValue.Binary+"\"")
 			case parser.FieldReferenceValue:
-				f := st.Field(arg.TypedValue.FieldReference.Name)
-				reference := "p." + f.GoName().String()
-				if f.GoTypeName().IsPointer() {
-					reference = "*" + reference
-				}
-				args = append(args, reference)
+				args = append(args, arg.TypedValue.GetFieldReferenceName("p.", vc.StructLike))
 			}
 		}
-		g.writeLine(strings.Join(args, ",") + ")")
+		g.write(strings.Join(args, ",") + ")\n")
 	// binary function
 	case "equal", "mod", "add":
-		genArg := func(arg *parser.ValidationValue) error {
-			switch arg.ValueType {
-			case parser.DoubleValue:
-				g.writef("float64(%f)", arg.TypedValue.Double)
-			case parser.IntValue:
-				g.writef("int(%d)", arg.TypedValue.Int)
-			case parser.FunctionValue:
-				g.writef("int(")
-				g.generateFunction(st, arg.TypedValue.Function)
-				g.writef(")")
-			case parser.FieldReferenceValue:
-				g.writef("int(")
-				f := st.Field(arg.TypedValue.FieldReference.Name)
-				source := "p." + f.GoName().String()
-				if f.GoTypeName().IsPointer() {
-					source = "*" + source
-				}
-				g.writef(source)
-				g.writef(")")
-			default:
-				return fmt.Errorf("value type %s is not supported for equal", arg.ValueType)
+		var args []string
+		for _, arg := range f.Arguments {
+			argName, err := g.renderValidationValue(vc, &arg)
+			if err != nil {
+				return err
 			}
-			return nil
+			args = append(args, argName)
 		}
-		arg0 := f.Arguments[0]
-		arg1 := f.Arguments[1]
-		if err := genArg(&arg0); err != nil {
-			return err
+		if len(args) < 2 {
+			return fmt.Errorf("binary function %s needs at least 2 arguments", f.Name)
 		}
+		g.write(source + " := " + args[0])
 		switch f.Name {
 		case "equal":
-			g.writef(" == ")
+			g.write(" == ")
 		case "mod":
-			g.writef(" %% ")
+			g.write(" % ")
 		case "add":
-			g.writef(" + ")
+			g.write(" + ")
 		}
-		if err := genArg(&arg1); err != nil {
-			return err
-		}
+		g.write(args[1] + "\n")
 	case "now_unix_nano":
-		g.writef("time.Now().UnixNano()")
+		g.write(source + ":= time.Now().UnixNano()\n")
 		return nil
 	default:
-		return errors.New("unknown function: " + f.Name)
+		funcTemplate := g.config.GetFunction(f.Name)
+		if funcTemplate == nil {
+			return errors.New("unknown function: " + f.Name)
+		}
+		var buf bytes.Buffer
+		err := funcTemplate.Execute(&buf, &struct {
+			Source     string
+			StructLike *golang.StructLike
+			Function   *parser.ToolFunction
+		}{
+			Source:     source,
+			StructLike: vc.StructLike,
+			Function:   f,
+		})
+		if err != nil {
+			return fmt.Errorf("execute function %s's template failed: %v", f.Name, err)
+		}
+		g.write(buf.String())
+		g.usedFuncs[funcTemplate] = true
 	}
 	return nil
 }

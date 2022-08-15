@@ -71,10 +71,14 @@ func Test_generator_generate(t *testing.T) {
 			goTypeDef: numericTestGoType,
 			wants: []string{
 				`if p.I64 <= int64(10) {`,
-				`_src := int(time.Now().UnixNano()) + int(1000)`,
+				`_src1:= time.Now().UnixNano()`,
+				`_src := _src1 + int64(1000)`,
 				`if p.Time <= int64(_src) {`,
-				`if !(int(p.I64) == int(12)) {`,
-				`if !(int(int(p.I64) % int(10)) == int(0)) {`,
+				`_assert := p.I64 == int64(12)`,
+				`if !(_assert) {`,
+				`_src2 := p.I64 % int64(10)`,
+				`_assert1 := _src2 == int64(0)`,
+				`if !(_assert1) {`,
 			},
 			wantErr: false,
 		},
@@ -102,7 +106,11 @@ func Test_generator_generate(t *testing.T) {
 				AST:        ast,
 				OutputPath: ".",
 			}
-			g := newGenerator(req)
+			g, err := newGenerator(req)
+			if err != nil {
+				t.Errorf("newGenerator() error = %v", err)
+				return
+			}
 			got, err := g.generate()
 			if (err != nil) != tt.wantErr {
 				t.Errorf("generator.generate() error = %v, wantErr %v", err, tt.wantErr)

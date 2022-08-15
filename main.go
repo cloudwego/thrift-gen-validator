@@ -19,7 +19,6 @@ import (
 	"io/ioutil"
 	"os"
 
-	"github.com/cloudwego/thrift-gen-validator/config"
 	"github.com/cloudwego/thrift-gen-validator/validator"
 	"github.com/cloudwego/thriftgo/plugin"
 )
@@ -51,10 +50,5 @@ func main() {
 		os.Exit(1)
 	}
 
-	var cfg config.Config
-	if err := cfg.Unpack(req.PluginParameters); err != nil {
-		println("Failed to unmarshal plugin parameters:", err.Error())
-		os.Exit(1)
-	}
-	os.Exit(validator.Run(req, &cfg))
+	os.Exit(validator.Run(req))
 }

@@ -9,5 +9,6 @@ header:
 
   paths-ignore:
     - "parser/function.peg.go"
+    - "examples/custom-function"
 
   comment: on-failure

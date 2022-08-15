@@ -42,3 +42,38 @@ func (v *ValidateContext) GenID(prefix string) (name string) {
 	v.ids[prefix]++
 	return
 }
+
+func mkStructLikeContext(utils *golang.CodeUtils, ast *tp.Thrift, resolver *golang.Resolver, st *golang.StructLike) ([]*ValidateContext, error) {
+	var ret []*ValidateContext
+	p := parser.NewParser(utils)
+	structLikeValidation, fieldValidations, err := p.Parse(st.StructLike)
+	if err != nil {
+		return nil, err
+	}
+	ids := map[string]int{}
+	for _, f := range st.Fields() {
+		rwctx, err := utils.MkRWCtx(utils.RootScope(), f)
+		if err != nil {
+			return nil, err
+		}
+		ret = append(ret, &ValidateContext{
+			AST:              ast,
+			Resolver:         resolver,
+			FieldName:        f.GoName().String(),
+			RawFieldName:     f.Field.Name,
+			StructLike:       st,
+			ReadWriteContext: rwctx,
+			Validation:       fieldValidations[f.Field],
+			IsOptional:       f.Requiredness.IsOptional(),
+			ids:              ids,
+		})
+	}
+	ret = append(ret, &ValidateContext{
+		AST:        ast,
+		Resolver:   resolver,
+		StructLike: st,
+		Validation: structLikeValidation,
+		ids:        ids,
+	})
+	return ret, nil
+}

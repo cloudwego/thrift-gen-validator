@@ -60,7 +60,8 @@ func (p *Example) IsValid() error {
 ## Feature Matrix
 
 prefix `vt`, short for "validation"
-Numeric(i8/i16/i32/i64/double):
+
+### Numeric(i8/i16/i32/i64/double)
 
 | Rule      |                                          |
 | --------- | ---------------------------------------- |
@@ -72,13 +73,13 @@ Numeric(i8/i16/i32/i64/double):
 | vt.in     | must be in specified values              |
 | vt.not_in | must not be in specified values          |
 
-Bool:
+### Bool
 
 | Rule     |                         |
 | -------- | ----------------------- |
 | vt.const | must be specified value |
 
-String/Binary:
+### String/Binary
 
 | Rule            |                                  |
 | --------------- | -------------------------------- |
@@ -91,20 +92,14 @@ String/Binary:
 | vt.min_size     | min size                         |
 | vt.max_size     | max size                         |
 
-Bool:
-
-| Rule     |                         |
-| -------- | ----------------------- |
-| vt.const | must be specified value |
-
-Enum:
+### Enum
 
 | Rule            |                         |
 | --------------- | ----------------------- |
 | vt.const        | must be specified value |
 | vt.defined_only | must be defined value   |
 
-Set/List:
+### Set/List
 
 | Rule        |                       |
 | ----------- | --------------------- |
@@ -112,7 +107,7 @@ Set/List:
 | vt.max_size | max size              |
 | vt.elem     | rule for list element |
 
-Map:
+### Map
 
 | Rule         |                                   |
 | ------------ | --------------------------------- |
@@ -122,23 +117,24 @@ Map:
 | vt.value     | rule for map value                |
 | vt.no_sparse | map value must be non-nil pointer |
 
-Struct Field:
+### Struct Field
 
 | Rule    |                                  |
 | ------- | -------------------------------- |
 | vt.skip | skip struct recursive validation |
 
-Struct
+### Struct
+
 | Rule      |                           |
 | --------- | ------------------------- |
 | vt.assert | expression should be true |
 
-Special Value:
+### Special Value
 
 1. Field Reference. We can use another field as a validation value.
 2. Validation Function. We can use those functions to provide extensive validation ability.
 
-Field Reference Example:
+#### Field Reference Example
 
 ```Thrift
 struct Example {
@@ -147,7 +143,7 @@ struct Example {
 }
 ```
 
-Validation Function:
+#### Validation Function
 
 ```Thrift
 struct Example {
@@ -164,6 +160,18 @@ struct Example {
 | equal         | 1, 2: comparable values                               | 1: whether two arguments is equal (bool)               | just like `==` of go                    |
 | mod           | 1, 2: integer                                         | 1: remainder of $1 / $2 (integer)                      | just like `%` of go                     |
 | add           | 1, 2: both are numeric or string                      | 1: sum of two arguments (integer or float64 or string) | just like `+` of go                     |
+
+#### Customized Validation Function
+
+Now you can use parameter `func` to customize your validation function. Like below:  
+`thriftgo -g go -p validator:func=my_func=path_to_template.txt my.thrift`  
+`my_func` is the function name, `path_to_template.txt` is the path to template file which should be a go template.
+Available template variables:
+| variable name | meaning                               | type                                                             |
+| ------------- | ------------------------------------- | ---------------------------------------------------------------- |
+| Source        | variable name that rule will refer to | string                                                           |
+| StructLike    | ast of current struct/union/exception | *"github.com/cloudwego/thriftgo/generator/golang".StructLike     |
+| Function      | data of current function              | *"github.com/cloudwego/thrift-gen-validator/parser".ToolFunction |
 
 ## Example
 
@@ -230,3 +238,107 @@ func main() {
 	}
 }
 ```
+
+### Customize Validation Function Example
+If we have a `my.thrift` like below:
+
+```Thrift
+struct Example {
+    1: string Message (vt.max_size = "@my_length()")
+}
+```
+
+And assumes that we want to the max length of Message is 10, we can write a template file `my_length.txt` like below:
+
+```template
+{{- .Source}} := 10 /*my length*/
+```
+
+Then we can use command below to generate a validator file:  
+`thriftgo -g go -p validator:func=my_length=my_length.txt my.thrift`
+
+We will get a `IsValid() error` like below:
+
+```go
+func (p *ValidatorExample) IsValid() error {
+	_src := 10 /*my length*/
+	if len(p.Message) > int(_src) {
+		return fmt.Errorf("field Message max_len rule failed, current value: %d", len(p.Message))
+	}
+	return nil
+}
+```
+
+`{{.Source}}` indicates `_src` which will be used in `if len(p.Message) > int(_src) {`, so all the thing the function template need to do is assign a value to `_src` aka `{{.Source}}`. In the above example, `{{- .Source}} := + 10 /*my length*/` will do.
+
+Now let's see a more complex example. Assumes that we have a `my.thrift` like below:
+
+```Thrift
+struct Example {
+    1: string Message (vt.max_size = "@fix_length($MaxLength)")
+    2: i64 MaxLength
+}
+```
+
+And assumes that we want to the max length of Message is the sum of MaxLength and 10, we can write a template file `fix_length.txt` like below:
+
+```template
+{{- $arg0 := index .Function.Arguments 0}}
+{{- $reference := $arg0.TypedValue.GetFieldReferenceName "p." .StructLike}}
+{{- .Source}} := {{$reference}} + 10 /*length fix*/
+```
+
+Then we can use command below to generate a validator file:  
+`thriftgo -g go -p validator:func=fix_length=fix_length.txt my.thrift`
+
+We will get a `IsValid() error` like below:
+
+```go
+func (p *ValidatorExample) IsValid() error {
+	_src := p.MaxLength + 10 /*length fix*/
+	if len(p.Message) > int(_src) {
+		return fmt.Errorf("field Message max_len rule failed, current value: %d", len(p.Message))
+	}
+	return nil
+}
+```
+
+`{{$arg0 := index .Function.Arguments 0}}` is used to get the first argument of the function. `{{$reference := $arg0.TypedValue.GetFieldReferenceName "p." .StructLike}}` is used to get the reference name of the first argument, for there `p.MaxLength`.
+
+In some scenarios, we might want to import some extra packages, for example, if we want to get some enviroment variables, we need to import `os` package which is not in the default import list. In this case, we can add following statement to function template file:
+
+```template
+{{define "Import"}}
+"os"
+{{end}}
+{{define "ImportGuard"}}
+_ = os.Exit
+{{end}}
+```
+
+Then we can get a validator go file header like below:
+
+```go
+import (
+	"bytes"
+	"fmt"
+	"os"
+	"reflect"
+	"regexp"
+	"strings"
+	"time"
+)
+
+// unused protection
+var (
+	_ = fmt.Formatter(nil)
+	_ = (*bytes.Buffer)(nil)
+	_ = (*strings.Builder)(nil)
+	_ = reflect.Type(nil)
+	_ = (*regexp.Regexp)(nil)
+	_ = time.Nanosecond
+	_ = os.Exit
+)
+```
+
+You can go to [examples/custom-function](/examples/custom-function/) to see the complete example. And you can view the generated code in [examples/custom-function/gen-go/my](/examples/custom-function/gen-go/my/).

@@ -1,0 +1,12 @@
+{{define "Import"}}
+"os"
+"strconv"
+{{end}}
+{{- $arg0 := index .Function.Arguments 0}}
+{{- $reference := $arg0.TypedValue.GetFieldReferenceName "p." .StructLike}}
+{{- .Source}} := {{$reference}}
+if fl := os.Getenv("FIXED_LENGTH"); fl != "" {
+    if l, err := strconv.ParseInt(fl, 10, 0); err == nil {
+        {{.Source}} += l
+    }
+}

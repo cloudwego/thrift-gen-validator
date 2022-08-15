@@ -17,22 +17,22 @@ package validator
 import (
 	"fmt"
 
-	"github.com/cloudwego/thriftgo/parser"
+	tp "github.com/cloudwego/thriftgo/parser"
 )
 
-func getEnum(ast *parser.Thrift, name string) (enum *parser.Enum, includeIndex int32) {
+func getEnum(ast *tp.Thrift, name string) (enum *tp.Enum, includeIndex int32) {
 	c, exist := ast.Name2Category[name]
 	if !exist {
 		return nil, -1
 	}
-	if c == parser.Category_Enum {
+	if c == tp.Category_Enum {
 		x, ok := ast.GetEnum(name)
 		if !ok {
 			panic(fmt.Errorf("expect %q to be an enum in %q, not found", name, ast.Filename))
 		}
 		return x, -1
 	}
-	if c == parser.Category_Typedef {
+	if c == tp.Category_Typedef {
 		if x, ok := ast.GetTypedef(name); !ok {
 			panic(fmt.Errorf("expect %q to be an typedef in %q, not found", name, ast.Filename))
 		} else {

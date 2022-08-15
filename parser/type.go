@@ -15,6 +15,7 @@
 package parser
 
 import (
+	"github.com/cloudwego/thriftgo/generator/golang"
 	tp "github.com/cloudwego/thriftgo/parser"
 )
 
@@ -75,6 +76,15 @@ type TypedValidationValue struct {
 	Enum           *tp.EnumValue
 	Binary         string
 	Function       *ToolFunction
+}
+
+func (t *TypedValidationValue) GetFieldReferenceName(ref string, st *golang.StructLike) string {
+	f := st.Field(t.FieldReference.Name)
+	reference := ref + f.GoName().String()
+	if f.GoTypeName().IsPointer() {
+		reference = "*" + reference
+	}
+	return reference
 }
 
 type Rule struct {
