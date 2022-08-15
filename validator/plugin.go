@@ -17,7 +17,6 @@ package validator
 import (
 	"os"
 
-	"github.com/cloudwego/thrift-gen-validator/config"
 	"github.com/cloudwego/thriftgo/plugin"
 )
 
@@ -29,10 +28,13 @@ const TheUseOptionMessage = "kitex_gen is not generated due to the -use option"
 
 // Run is an entry of the plugin mode of kitex for thriftgo.
 // It reads a plugin request from the standard input and writes out a response.
-func Run(req *plugin.Request, cfg *config.Config) int {
+func Run(req *plugin.Request) int {
 	var warnings []string
 
-	g := newGenerator(req)
+	g, err := newGenerator(req)
+	if err != nil {
+		return exit(&plugin.Response{Warnings: []string{err.Error()}})
+	}
 	contents, err := g.generate()
 	if err != nil {
 		return exit(&plugin.Response{Warnings: []string{err.Error()}})

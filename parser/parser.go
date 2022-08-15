@@ -90,7 +90,7 @@ func (p *Parser) parseEnum(st *tp.StructLike, annotations []*tp.Annotation) (*Va
 	rf := NewRuleFactory(EnumKeys)
 	for _, anno := range annotations {
 		annoKey, annoVals := anno.Key, anno.Values
-		kp, err := newKeyParser(annoKey)
+		kp, err := newKeyReader(annoKey)
 		if err != nil {
 			return nil, err
 		}
@@ -147,7 +147,7 @@ func (p *Parser) parseBool(st *tp.StructLike, annotations []*tp.Annotation) (*Va
 	rf := NewRuleFactory(BoolKeys)
 	for _, anno := range annotations {
 		annoKey, annoVals := anno.Key, anno.Values
-		kp, err := newKeyParser(annoKey)
+		kp, err := newKeyReader(annoKey)
 		if err != nil {
 			return nil, err
 		}
@@ -194,7 +194,7 @@ func (p *Parser) parseInt(st *tp.StructLike, annotations []*tp.Annotation) (*Val
 	rf := NewRuleFactory(NumericKeys)
 	for _, anno := range annotations {
 		annoKey, annoVals := anno.Key, anno.Values
-		kp, err := newKeyParser(annoKey)
+		kp, err := newKeyReader(annoKey)
 		if err != nil {
 			return nil, err
 		}
@@ -261,7 +261,7 @@ func (p *Parser) parseDouble(st *tp.StructLike, annotations []*tp.Annotation) (*
 	rf := NewRuleFactory(NumericKeys)
 	for _, anno := range annotations {
 		annoKey, annoVals := anno.Key, anno.Values
-		kp, err := newKeyParser(annoKey)
+		kp, err := newKeyReader(annoKey)
 		if err != nil {
 			return nil, err
 		}
@@ -328,7 +328,7 @@ func (p *Parser) parseBinary(st *tp.StructLike, annotations []*tp.Annotation) (*
 	rf := NewRuleFactory(BinaryKeys)
 	for _, anno := range annotations {
 		annoKey, annoVals := anno.Key, anno.Values
-		kp, err := newKeyParser(annoKey)
+		kp, err := newKeyReader(annoKey)
 		if err != nil {
 			return nil, err
 		}
@@ -403,7 +403,7 @@ func (p *Parser) parseList(st *tp.StructLike, elemType *tp.Type, annotations []*
 	var elemAnnotations []*tp.Annotation
 	for _, anno := range annotations {
 		annoKey, annoVals := anno.Key, anno.Values
-		kp, err := newKeyParser(annoKey)
+		kp, err := newKeyReader(annoKey)
 		if err != nil {
 			return nil, err
 		}
@@ -473,7 +473,7 @@ func (p *Parser) parseMap(st *tp.StructLike, keyType, valType *tp.Type, annotati
 	var valAnnotations []*tp.Annotation
 	for _, anno := range annotations {
 		annoKey, annoVals := anno.Key, anno.Values
-		kp, err := newKeyParser(annoKey)
+		kp, err := newKeyReader(annoKey)
 		if err != nil {
 			return nil, err
 		}
@@ -563,7 +563,7 @@ func (p *Parser) parseStructField(st *tp.StructLike, annotations []*tp.Annotatio
 	rf := NewRuleFactory(StructLikeFieldKeys)
 	for _, anno := range annotations {
 		annoKey, annoVals := anno.Key, anno.Values
-		kp, err := newKeyParser(annoKey)
+		kp, err := newKeyReader(annoKey)
 		if err != nil {
 			return nil, err
 		}
@@ -589,7 +589,7 @@ func (p *Parser) parseStructField(st *tp.StructLike, annotations []*tp.Annotatio
 					return nil, fmt.Errorf("parse struct-like value failed: %w", err)
 				}
 				value = &ValidationValue{
-					ValueType:  IntValue,
+					ValueType:  BoolValue,
 					TypedValue: TypedValidationValue{Bool: val},
 				}
 			}
@@ -610,7 +610,7 @@ func (p *Parser) parseStruct(st *tp.StructLike, annotations []*tp.Annotation) (*
 	rf := NewRuleFactory(StructLikeKeys)
 	for _, anno := range annotations {
 		annoKey, annoVals := anno.Key, anno.Values
-		kp, err := newKeyParser(annoKey)
+		kp, err := newKeyReader(annoKey)
 		if err != nil {
 			return nil, err
 		}

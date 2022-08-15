@@ -181,7 +181,7 @@ type keyParser struct {
 	nodes []string
 }
 
-func newKeyParser(anno string) (*keyParser, error) {
+func newKeyReader(anno string) (*keyParser, error) {
 	nodes := strings.Split(anno, ".")
 	if len(nodes) < 2 || nodes[0] != validatorPrefix {
 		return nil, errors.New("invalid annotation key")

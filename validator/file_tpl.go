@@ -27,6 +27,7 @@ import (
 	"reflect"
 	"regexp"
 	"time"
+	{{.Import}}
 )
 
 // unused protection
@@ -37,6 +38,7 @@ var (
 	_ = reflect.Type(nil)
 	_ = (*regexp.Regexp)(nil)
 	_ = time.Nanosecond
+	{{.ImportGuard}}
 )
 
 {{end}}{{/* define "file" */}}
