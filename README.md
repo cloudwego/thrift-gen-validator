@@ -312,7 +312,7 @@ In some scenarios, we might want to import some extra packages, for example, if 
 "os"
 {{end}}
 {{define "ImportGuard"}}
-_ = os.Exit
+_ = os.Getenv
 {{end}}
 ```
 
@@ -337,7 +337,7 @@ var (
 	_ = reflect.Type(nil)
 	_ = (*regexp.Regexp)(nil)
 	_ = time.Nanosecond
-	_ = os.Exit
+	_ = os.Getenv
 )
 ```
 
