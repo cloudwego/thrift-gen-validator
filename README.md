@@ -248,7 +248,7 @@ struct Example {
 }
 ```
 
-And assumes that we want to the max length of Message is 10, we can write a template file `my_length.txt` like below:
+And assumes that we want to limit the max length of `Message` to 10, we can write a template file `my_length.txt` like below:
 
 ```template
 {{- .Source}} := 10 /*my length*/
@@ -280,7 +280,7 @@ struct Example {
 }
 ```
 
-And assumes that we want to the max length of Message is the sum of MaxLength and 10, we can write a template file `fix_length.txt` like below:
+And assumes that we want to limit the max length of `Message` to the sum of MaxLength and 10, we can write a template file `fix_length.txt` like below:
 
 ```template
 {{- $arg0 := index .Function.Arguments 0}}
