@@ -965,7 +965,7 @@ func (g *generator) generateSlice(st *golang.StructLike, name, typeID string, va
 			if val.ValueType == parser.FieldReferenceValue {
 				source = val.TypedValue.GetFieldReferenceName("p.", st)
 			} else {
-				source = "[]byte(\"" + val.TypedValue.Binary + "\")"
+				source = "\"" + val.TypedValue.Binary + "\""
 			}
 			vs = append(vs, typeid2go[typeID]+"("+source+")")
 		}
