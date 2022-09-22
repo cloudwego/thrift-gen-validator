@@ -370,7 +370,7 @@ func (g *generator) generateEnumValidation(vc *ValidateContext) error {
 			parser.NotNil:
 			// do nothing
 		default:
-			return errors.New("unknown bool annotation")
+			return errors.New("unknown enum annotation")
 		}
 		// generate validation code
 		switch rule.Key {
@@ -391,7 +391,7 @@ func (g *generator) generateEnumValidation(vc *ValidateContext) error {
 		case parser.NotNil:
 			// do nothing
 		default:
-			return errors.New("unknown bool annotation")
+			return errors.New("unknown enum annotation")
 		}
 	}
 	return nil
