@@ -35,13 +35,14 @@ import (
 var Version string
 
 type generator struct {
-	config    *config.Config
-	request   *plugin.Request
-	utils     *golang.CodeUtils
-	buffer    *bytes.Buffer
-	indentNum int
-	warnings  []string
-	usedFuncs map[*template.Template]bool
+	config     *config.Config
+	request    *plugin.Request
+	utils      *golang.CodeUtils
+	buffer     *bytes.Buffer
+	indentNum  int
+	warnings   []string
+	usedFuncs  map[*template.Template]bool
+	enumImport []string
 }
 
 func newGenerator(req *plugin.Request) (*generator, error) {
@@ -100,6 +101,7 @@ func (g *generator) generate() ([]*plugin.Generated, error) {
 	// generate file header
 	for ast := range g.request.AST.DepthFirstSearch() {
 		g.buffer.Reset()
+		g.enumImport = g.enumImport[:0]
 		scope, err := golang.BuildScope(g.utils, ast)
 		if err != nil {
 			return nil, err
@@ -134,6 +136,7 @@ func (g *generator) renderHeader(ast *tp.Thrift) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	var importBuf, importGuardBuf bytes.Buffer
 	for tpl := range g.usedFuncs {
 		if strings.Contains(tpl.DefinedTemplates(), "Import") {
@@ -151,6 +154,22 @@ func (g *generator) renderHeader(ast *tp.Thrift) (string, error) {
 	importStr = strings.ReplaceAll(importStr, "\n\n", "\n")
 	importGuardStr := strings.TrimSpace(importGuardBuf.String())
 	importGuardStr = strings.ReplaceAll(importGuardStr, "\n\n", "\n")
+	enumUnique := make(map[string]struct{}, len(g.enumImport))
+	for _, impt := range g.enumImport {
+		if _, exist := enumUnique[impt]; !exist {
+			var importAlias string
+			for _, inc := range g.utils.RootScope().Includes() {
+				if inc.ImportPath == impt {
+					if inc.PackageName == filepath.Base(inc.ImportPath) {
+						importAlias = inc.PackageName + " "
+					}
+					break
+				}
+			}
+			importStr = importStr + importAlias + "\"" + impt + "\"\n"
+			enumUnique[impt] = struct{}{}
+		}
+	}
 	tl.Execute(&header, &struct {
 		Version     string
 		PkgName     string
@@ -336,6 +355,12 @@ func (g *generator) generateEnumValidation(vc *ValidateContext) error {
 							continue
 						}
 						if enum, _ := getEnum(inc.Reference, ss[1]); enum != nil {
+							_, refImport := g.utils.Import(inc.GetReference())
+							_, curImport := g.utils.Import(vc.AST)
+							// prevent self-import
+							if refImport != curImport {
+								g.enumImport = append(g.enumImport, refImport)
+							}
 							for _, v := range enum.Values {
 								if v.Name == ss[2] {
 									ref = append(ref, &tp.ConstValueExtra{
@@ -360,6 +385,7 @@ func (g *generator) generateEnumValidation(vc *ValidateContext) error {
 				},
 				Extra: ref[0],
 			}
+			// todo update go.mod for bugfix for same namespace
 			str, err := vc.Resolver.GetConstInit(vc.RawFieldName, vc.Type, cv)
 			if err != nil {
 				return err
