@@ -280,7 +280,7 @@ func (g *generator) generateStructLikeFieldValidation(vc *ValidateContext) error
 	if !skip {
 		g.writeLinef("if err := %s.IsValid(); err != nil {\n", vc.Target)
 		g.indent()
-		g.writeLinef("return fmt.Errorf(\"filed %s not valid, %%w\", err)", vc.FieldName)
+		g.writeLinef("return fmt.Errorf(\"field %s not valid, %%w\", err)", vc.FieldName)
 		g.unindent()
 		g.writeLine("}")
 	}
