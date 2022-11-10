@@ -54,7 +54,7 @@ func getFieldReferenceValidation(st *tp.StructLike, anno string) (*ValidationVal
 	}
 	f := getFieldReference(anno, st)
 	if f == nil {
-		return nil, fmt.Errorf("filed reference %s not found", anno)
+		return nil, fmt.Errorf("field reference %s not found", anno)
 	}
 	return &ValidationValue{
 		ValueType:  FieldReferenceValue,
