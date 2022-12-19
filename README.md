@@ -45,7 +45,7 @@ func (p *Example) IsValid() error {
 
 ## Install
 
-`go install github.com/cloudwego/thrift-gen-validator`
+`go install github.com/cloudwego/thrift-gen-validator@latest`
 
 ## Usage
 
