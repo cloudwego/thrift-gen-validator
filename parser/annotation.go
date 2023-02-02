@@ -128,6 +128,8 @@ var (
 		Const,
 		DefinedOnly,
 		NotNil,
+		In,
+		NotIn,
 	}
 	ListKeys = []Key{
 		MinSize,
