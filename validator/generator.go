@@ -308,6 +308,76 @@ func (g *generator) generateStructLikeValidation(vc *ValidateContext) error {
 	return nil
 }
 
+func (g *generator) parseEnumValue(identifier string, vc *ValidateContext) (golang.Code, error) {
+	sss := semantic.SplitValue(identifier)
+	var ref []*tp.ConstValueExtra
+	for _, ss := range sss {
+		switch len(ss) {
+		case 2: // enum.value or someinclude.constant
+			// TODO: if enum.value is written in typedef.value?
+
+			// enum.value
+			if enum, idx := getEnum(vc.AST, ss[0]); enum != nil {
+				for _, v := range enum.Values {
+					if v.Name == ss[1] {
+						ref = append(ref, &tp.ConstValueExtra{
+							IsEnum: true, Index: idx, Name: ss[1], Sel: ss[0],
+						})
+					}
+				}
+			}
+			for idx, inc := range vc.AST.Includes {
+				if semantic.IDLPrefix(inc.Path) != ss[0] {
+					continue
+				}
+				if c, exist := inc.Reference.Name2Category[ss[1]]; exist {
+					if c == tp.Category_Constant {
+						ref = append(ref, &tp.ConstValueExtra{
+							IsEnum: false, Index: int32(idx), Name: ss[1], Sel: ss[0],
+						})
+					}
+				}
+			}
+		case 3: // someinclude.enum.value
+			for idx, inc := range vc.AST.Includes {
+				if semantic.IDLPrefix(inc.Path) != ss[0] {
+					continue
+				}
+				if enum, _ := getEnum(inc.Reference, ss[1]); enum != nil {
+					_, refImport := g.utils.Import(inc.GetReference())
+					_, curImport := g.utils.Import(vc.AST)
+					// prevent self-import
+					if refImport != curImport {
+						g.enumImport = append(g.enumImport, refImport)
+					}
+					for _, v := range enum.Values {
+						if v.Name == ss[2] {
+							ref = append(ref, &tp.ConstValueExtra{
+								IsEnum: true, Index: int32(idx), Name: ss[2], Sel: ss[1],
+							})
+						}
+					}
+				}
+			}
+		}
+	}
+	if len(ref) == 0 {
+		return "", fmt.Errorf("undefined value: %q", identifier)
+	}
+	if len(ref) >= 2 {
+		return "", fmt.Errorf("ambiguous const value %q (%d possible explainations)", identifier, len(ref))
+	}
+	cv := &tp.ConstValue{
+		Type: tp.ConstType_ConstIdentifier,
+		TypedValue: &tp.ConstTypedValue{
+			Identifier: &identifier,
+		},
+		Extra: ref[0],
+	}
+	// todo update go.mod for bugfix for same namespace
+	return vc.Resolver.GetConstInit(vc.RawFieldName, vc.Type, cv)
+}
+
 func (g *generator) generateEnumValidation(vc *ValidateContext) error {
 	var target, source string
 	for _, rule := range vc.Rules {
@@ -320,78 +390,15 @@ func (g *generator) generateEnumValidation(vc *ValidateContext) error {
 		switch rule.Key {
 		case parser.Const:
 			identifier := rule.Specified.TypedValue.Binary
-			sss := semantic.SplitValue(identifier)
-			var ref []*tp.ConstValueExtra
-			for _, ss := range sss {
-				switch len(ss) {
-				case 2: // enum.value or someinclude.constant
-					// TODO: if enum.value is written in typedef.value?
-
-					// enum.value
-					if enum, idx := getEnum(vc.AST, ss[0]); enum != nil {
-						for _, v := range enum.Values {
-							if v.Name == ss[1] {
-								ref = append(ref, &tp.ConstValueExtra{
-									IsEnum: true, Index: idx, Name: ss[1], Sel: ss[0],
-								})
-							}
-						}
-					}
-					for idx, inc := range vc.AST.Includes {
-						if semantic.IDLPrefix(inc.Path) != ss[0] {
-							continue
-						}
-						if c, exist := inc.Reference.Name2Category[ss[1]]; exist {
-							if c == tp.Category_Constant {
-								ref = append(ref, &tp.ConstValueExtra{
-									IsEnum: false, Index: int32(idx), Name: ss[1], Sel: ss[0],
-								})
-							}
-						}
-					}
-				case 3: // someinclude.enum.value
-					for idx, inc := range vc.AST.Includes {
-						if semantic.IDLPrefix(inc.Path) != ss[0] {
-							continue
-						}
-						if enum, _ := getEnum(inc.Reference, ss[1]); enum != nil {
-							_, refImport := g.utils.Import(inc.GetReference())
-							_, curImport := g.utils.Import(vc.AST)
-							// prevent self-import
-							if refImport != curImport {
-								g.enumImport = append(g.enumImport, refImport)
-							}
-							for _, v := range enum.Values {
-								if v.Name == ss[2] {
-									ref = append(ref, &tp.ConstValueExtra{
-										IsEnum: true, Index: int32(idx), Name: ss[2], Sel: ss[1],
-									})
-								}
-							}
-						}
-					}
-				}
-			}
-			if len(ref) == 0 {
-				return fmt.Errorf("undefined value: %q", identifier)
-			}
-			if len(ref) >= 2 {
-				return fmt.Errorf("ambiguous const value %q (%d possible explainations)", identifier, len(ref))
-			}
-			cv := &tp.ConstValue{
-				Type: tp.ConstType_ConstIdentifier,
-				TypedValue: &tp.ConstTypedValue{
-					Identifier: &identifier,
-				},
-				Extra: ref[0],
-			}
-			// todo update go.mod for bugfix for same namespace
-			str, err := vc.Resolver.GetConstInit(vc.RawFieldName, vc.Type, cv)
+			str, err := g.parseEnumValue(identifier, vc)
 			if err != nil {
 				return err
 			}
 			source = vc.GenID("_src")
 			g.writeLinef("%s := %s\n", source, str)
+		case parser.In, parser.NotIn:
+			source = vc.GenID("_src")
+			g.generateEnumSlice(source, vc.Type.Name, rule.Range, vc)
 		case parser.DefinedOnly,
 			parser.NotNil:
 			// do nothing
@@ -416,6 +423,34 @@ func (g *generator) generateEnumValidation(vc *ValidateContext) error {
 			}
 		case parser.NotNil:
 			// do nothing
+		case parser.In:
+			exist := vc.GenID("_exist")
+			g.writeLinef("var %s bool\n", exist)
+			g.writeLinef("for _, src := range %s {\n", source)
+			g.indent()
+			g.writeLinef("if %s == src {\n", target)
+			g.indent()
+			g.writeLinef("%s = true\n", exist)
+			g.writeLine("break")
+			g.unindent()
+			g.writeLine("}")
+			g.unindent()
+			g.writeLine("}")
+			g.writeLinef("if !%s {\n", exist)
+			g.indent()
+			g.writeLinef("return fmt.Errorf(\"field %s in rule failed, current value: %%v\", %s)\n", vc.FieldName, target)
+			g.unindent()
+			g.writeLine("}")
+		case parser.NotIn:
+			g.writeLinef("for _, src := range %s {\n", source)
+			g.indent()
+			g.writeLinef("if %s == src {\n", target)
+			g.indent()
+			g.writeLinef("return fmt.Errorf(\"field %s not_in rule failed, current value: %%v\", %s)\n", vc.FieldName, target)
+			g.unindent()
+			g.writeLine("}")
+			g.unindent()
+			g.writeLine("}")
 		default:
 			return errors.New("unknown enum annotation")
 		}
@@ -997,6 +1032,23 @@ func (g *generator) generateSlice(st *golang.StructLike, name, typeID string, va
 		}
 	default:
 		return fmt.Errorf("type %s not supported in generate slice", typeID)
+	}
+	g.writeLinef("%s}\n", strings.Join(vs, ", "))
+	return nil
+}
+
+func (g *generator) generateEnumSlice(name, enumType string, vals []*parser.ValidationValue, vc *ValidateContext) error {
+	if len(vals) == 0 {
+		return errors.New("empty validation values")
+	}
+	g.writeLinef("%s := []", name)
+	var vs []string
+	g.writeLinef("%s{", enumType)
+	for _, val := range vals {
+		str, err := g.parseEnumValue(val.TypedValue.Binary, vc)
+		if err == nil {
+			vs = append(vs, string(str))
+		}
 	}
 	g.writeLinef("%s}\n", strings.Join(vs, ", "))
 	return nil

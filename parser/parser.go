@@ -112,7 +112,7 @@ func (p *Parser) parseEnum(st *tp.StructLike, annotations []*tp.Annotation) (*Va
 			}
 			if value == nil {
 				switch nodeKey {
-				case Const:
+				case Const, In, NotIn:
 					value = &ValidationValue{
 						ValueType:  BinaryValue,
 						TypedValue: TypedValidationValue{Binary: annoVal},
