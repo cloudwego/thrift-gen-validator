@@ -41,7 +41,7 @@ type Numeric struct {
 
 var stringTest = `
 struct StringTest {
-	1: string Str (vt.pattern = "\d{4}-\\d{2}-\\\d{2}")
+	1: string Str (vt.pattern = "\\d{4}-\\d{2}-\\\\d{2}")
 }
 `
 
@@ -82,6 +82,7 @@ func Test_generator_generate(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		// https://github.com/cloudwego/thriftgo/commit/69d1ea6f5921919fac6acb4b24bfc4c1b7a55ce8
 		{
 			name:      "string",
 			idl:       stringTest,
