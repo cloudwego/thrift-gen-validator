@@ -1113,9 +1113,7 @@ func (g *generator) generateFunction(source string, vc *ValidateContext, f *pars
 		g.write(source + " := " + args[0])
 		switch f.Name {
 		case "equal":
-			if vc.TypeID == "Bool" {
-				g.write(" == ")
-			}
+			g.write(" == ")
 		case "mod":
 			g.write(" % ")
 		case "add":
