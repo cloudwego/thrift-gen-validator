@@ -492,6 +492,12 @@ func (g *generator) generateBoolValidation(vc *ValidateContext) error {
 				source = strconv.FormatBool(vt.TypedValue.Bool)
 			case parser.FieldReferenceValue:
 				source = vt.TypedValue.GetFieldReferenceName("p.", vc.StructLike)
+			case parser.FunctionValue:
+				source = vc.GenID("_src")
+				if err := g.generateFunction(source, vc, vt.TypedValue.Function); err != nil {
+					return err
+				}
+				g.write("\n")
 			}
 		case parser.NotNil:
 			// do nothing
