@@ -21,5 +21,5 @@ func init() {
 }
 
 const (
-	Version = "v0.1.5"
+	Version = "v0.2.2"
 )
