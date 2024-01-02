@@ -18,7 +18,7 @@ package validator
 var StructLikeValidate = `
 {{define "StructLikeValidate"}}
 {{- $TypeName := .Name | Identify}}
-func (p *{{$TypeName}}) IsValid() bool {
+func (p *{{$TypeName}}) ` + ValidMethodName + `() bool {
 	{{- ctxs := MkValidateContexts .Fields}}
 	{{- range .ctxs}}
 	{{template "FieldValidate" .}}
@@ -49,7 +49,7 @@ var FieldValidateStructLike = `
 	
 	{{- else if eq . Annotation $StructLikeAnnotation.NotNil}}
 	{{- end}}
-	if !{{.Target}}.IsValid({{.Source}}) {
+	if !{{.Target}}.` + ValidMethodName + `({{.Source}}) {
 		return false
 	}
 {{- end}}{{/* "FieldValidateStructLike" */}}

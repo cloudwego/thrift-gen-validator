@@ -34,6 +34,8 @@ import (
 
 var Version string
 
+var ValidMethodName string = "IsValid"
+
 type generator struct {
 	config     *config.Config
 	request    *plugin.Request
@@ -67,7 +69,20 @@ func newGenerator(req *plugin.Request) (*generator, error) {
 	}
 	g.utils = golang.NewCodeUtils(lf)
 	g.utils.HandleOptions(req.GeneratorParameters)
+	if parseExtend(req.PluginParameters) {
+		ValidMethodName = "IsStructValid"
+	}
+
 	return g, nil
+}
+
+func parseExtend(params []string) bool {
+	for _, parameter := range params {
+		if strings.HasPrefix(parameter, "avoid_name") {
+			return true
+		}
+	}
+	return false
 }
 
 func (g *generator) write(str string) {
@@ -198,7 +213,7 @@ func (g *generator) generateBody(ast *tp.Thrift, resolver *golang.Resolver) erro
 		if err != nil {
 			return err
 		}
-		g.writeLinef("func (p *%s) IsValid() error {\n", st.GoName().String())
+		g.writeLinef("func (p *%s) "+ValidMethodName+"() error {\n", st.GoName().String())
 		g.indent()
 		for _, vc := range vcs {
 			switch vc.ValidationType {
@@ -282,7 +297,7 @@ func (g *generator) generateStructLikeFieldValidation(vc *ValidateContext) error
 		}
 	}
 	if !skip {
-		g.writeLinef("if err := %s.IsValid(); err != nil {\n", vc.Target)
+		g.writeLinef("if err := %s."+ValidMethodName+"(); err != nil {\n", vc.Target)
 		g.indent()
 		g.writeLinef("return fmt.Errorf(\"field %s not valid, %%w\", err)", vc.FieldName)
 		g.unindent()
