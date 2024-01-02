@@ -115,6 +115,10 @@ func (g *generator) generate() ([]*plugin.Generated, error) {
 	var ret []*plugin.Generated
 	// generate file header
 	for ast := range g.request.AST.DepthFirstSearch() {
+		if ok, _ := golang.DoRef(ast.Filename); ok {
+			// if it's common struct refs, do not generate files
+			continue
+		}
 		g.buffer.Reset()
 		g.enumImport = g.enumImport[:0]
 		scope, err := golang.BuildScope(g.utils, ast)
@@ -503,6 +507,12 @@ func (g *generator) generateBoolValidation(vc *ValidateContext) error {
 				source = strconv.FormatBool(vt.TypedValue.Bool)
 			case parser.FieldReferenceValue:
 				source = vt.TypedValue.GetFieldReferenceName("p.", vc.StructLike)
+			case parser.FunctionValue:
+				source = vc.GenID("_src")
+				if err := g.generateFunction(source, vc, vt.TypedValue.Function); err != nil {
+					return err
+				}
+				g.write("\n")
 			}
 		case parser.NotNil:
 			// do nothing
