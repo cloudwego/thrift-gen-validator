@@ -855,6 +855,7 @@ func (g *generator) generateListValidation(vc *ValidateContext) error {
 
 			vc.ValCtx.WithTarget(elemName)
 			vt := &ValidateContext{
+				AST:              vc.AST,
 				FieldName:        elemName,
 				RawFieldName:     elemName,
 				Resolver:         vc.Resolver,
