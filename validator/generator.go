@@ -601,7 +601,12 @@ func (g *generator) generateNumericValidation(vc *ValidateContext) error {
 			g.unindent()
 			g.writeLine("}")
 		case parser.GreatEqual:
-			g.writeLinef("if %s < %s(%s) {\n", target, typeName, source)
+			if strings.HasPrefix(source,"*"){
+				sourceVal := strings.TrimPrefix(source,"*")
+				g.writeLinef("if %s!=nil && %s < %s(%s) {\n",sourceVal, target, typeName, source)
+			}else{
+				g.writeLinef("if %s < %s(%s) {\n", target, typeName, source)
+			}
 			g.indent()
 			g.writeLinef("return fmt.Errorf(\"field %s ge rule failed, current value: %%v\", %s)\n", vc.FieldName, target)
 			g.unindent()
