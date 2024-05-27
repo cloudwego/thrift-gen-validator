@@ -16,11 +16,9 @@ package main
 
 import (
 	"flag"
-	"io/ioutil"
 	"os"
 
 	"github.com/cloudwego/thrift-gen-validator/validator"
-	"github.com/cloudwego/thriftgo/plugin"
 )
 
 func main() {
@@ -38,17 +36,5 @@ func main() {
 		os.Exit(0)
 	}
 
-	data, err := ioutil.ReadAll(os.Stdin)
-	if err != nil {
-		println("Failed to get input:", err.Error())
-		os.Exit(1)
-	}
-
-	req, err := plugin.UnmarshalRequest(data)
-	if err != nil {
-		println("Failed to unmarshal request:", err.Error())
-		os.Exit(1)
-	}
-
-	os.Exit(validator.Run(req))
+	os.Exit(validator.Run())
 }

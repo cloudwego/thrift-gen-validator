@@ -15,6 +15,7 @@
 package validator
 
 import (
+	"io/ioutil"
 	"os"
 
 	"github.com/cloudwego/thriftgo/plugin"
@@ -28,28 +29,45 @@ const TheUseOptionMessage = "kitex_gen is not generated due to the -use option"
 
 // Run is an entry of the plugin mode of kitex for thriftgo.
 // It reads a plugin request from the standard input and writes out a response.
-func Run(req *plugin.Request) int {
+func Run() int {
+
+	data, err := ioutil.ReadAll(os.Stdin)
+	if err != nil {
+		println("Failed to get input:", err.Error())
+		os.Exit(1)
+	}
+
+	req, err := plugin.UnmarshalRequest(data)
+	if err != nil {
+		println("Failed to unmarshal request:", err.Error())
+		os.Exit(1)
+	}
+
+	res := HandleRequest(req)
+
+	return exit(res)
+}
+
+func HandleRequest(req *plugin.Request) *plugin.Response {
 	var warnings []string
 
 	g, err := newGenerator(req)
 	if err != nil {
-		return exit(&plugin.Response{Warnings: []string{err.Error()}})
+		return &plugin.Response{Warnings: []string{err.Error()}}
 	}
 	contents, err := g.generate()
 	if err != nil {
-		return exit(&plugin.Response{Warnings: []string{err.Error()}})
+		return &plugin.Response{Warnings: []string{err.Error()}}
 	}
 
 	warnings = append(warnings, g.warnings...)
 	for i := range warnings {
 		warnings[i] = "[thrift-gen-validator] " + warnings[i]
 	}
-	res := &plugin.Response{
+	return &plugin.Response{
 		Warnings: warnings,
 		Contents: contents,
 	}
-
-	return exit(res)
 }
 
 func exit(res *plugin.Response) int {
