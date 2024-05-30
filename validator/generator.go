@@ -32,7 +32,9 @@ import (
 	"github.com/cloudwego/thriftgo/semantic"
 )
 
-var Version string
+const (
+	Version = "v0.2.4"
+)
 
 var ValidMethodName string = "IsValid"
 
@@ -115,15 +117,14 @@ func (g *generator) generate() ([]*plugin.Generated, error) {
 	var ret []*plugin.Generated
 	// generate file header
 	for ast := range g.request.AST.DepthFirstSearch() {
-		if ok, _ := golang.DoRef(ast.Filename); ok {
-			// if it's common struct refs, do not generate files
-			continue
-		}
 		g.buffer.Reset()
 		g.enumImport = g.enumImport[:0]
-		scope, err := golang.BuildScope(g.utils, ast)
+		scope, _, err := golang.BuildRefScope(g.utils, ast)
 		if err != nil {
 			return nil, err
+		}
+		if scope == nil {
+			continue
 		}
 		g.utils.SetRootScope(scope)
 		resolver := golang.NewResolver(g.utils.RootScope(), g.utils)
@@ -601,10 +602,10 @@ func (g *generator) generateNumericValidation(vc *ValidateContext) error {
 			g.unindent()
 			g.writeLine("}")
 		case parser.GreatEqual:
-			if strings.HasPrefix(source,"*"){
-				sourceVal := strings.TrimPrefix(source,"*")
-				g.writeLinef("if %s!=nil && %s < %s(%s) {\n",sourceVal, target, typeName, source)
-			}else{
+			if strings.HasPrefix(source, "*") {
+				sourceVal := strings.TrimPrefix(source, "*")
+				g.writeLinef("if %s!=nil && %s < %s(%s) {\n", sourceVal, target, typeName, source)
+			} else {
 				g.writeLinef("if %s < %s(%s) {\n", target, typeName, source)
 			}
 			g.indent()
