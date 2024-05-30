@@ -32,7 +32,7 @@ func main() {
 	}
 
 	if queryVersion {
-		println(Version)
+		println(validator.Version)
 		os.Exit(0)
 	}
 

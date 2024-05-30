@@ -25,9 +25,11 @@ type ValidatorSDKPlugin struct {
 }
 
 func NewValidatorSDKPlugin(params string) *ValidatorSDKPlugin {
-	return &ValidatorSDKPlugin{
-		PluginParameters: strings.Split(params, ","),
+	plugin := &ValidatorSDKPlugin{}
+	if params != "" {
+		plugin.PluginParameters = strings.Split(params, ",")
 	}
+	return plugin
 }
 
 func (k *ValidatorSDKPlugin) Invoke(req *plugin.Request) (res *plugin.Response) {
