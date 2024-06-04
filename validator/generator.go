@@ -178,12 +178,15 @@ func (g *generator) renderHeader(ast *tp.Thrift) (string, error) {
 	for _, impt := range g.enumImport {
 		if _, exist := enumUnique[impt]; !exist {
 			var importAlias string
-			for _, inc := range g.utils.RootScope().Includes() {
-				if inc.ImportPath == impt {
-					if inc.PackageName == filepath.Base(inc.ImportPath) {
-						importAlias = inc.PackageName + " "
+			rootScope := g.utils.RootScope()
+			if rootScope != nil {
+				for _, inc := range rootScope.Includes() {
+					if inc.ImportPath == impt {
+						if inc.PackageName == filepath.Base(inc.ImportPath) {
+							importAlias = inc.PackageName + " "
+						}
+						break
 					}
-					break
 				}
 			}
 			importStr = importStr + importAlias + "\"" + impt + "\"\n"
