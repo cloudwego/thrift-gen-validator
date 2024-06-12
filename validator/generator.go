@@ -33,7 +33,7 @@ import (
 )
 
 const (
-	Version = "v0.2.4"
+	Version = "v0.2.5"
 )
 
 var ValidMethodName string = "IsValid"
@@ -181,6 +181,9 @@ func (g *generator) renderHeader(ast *tp.Thrift) (string, error) {
 			rootScope := g.utils.RootScope()
 			if rootScope != nil {
 				for _, inc := range rootScope.Includes() {
+					if inc == nil {
+						continue
+					}
 					if inc.ImportPath == impt {
 						if inc.PackageName == filepath.Base(inc.ImportPath) {
 							importAlias = inc.PackageName + " "
