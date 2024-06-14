@@ -33,11 +33,13 @@ func Run(req *plugin.Request) int {
 
 	g, err := newGenerator(req)
 	if err != nil {
-		return exit(&plugin.Response{Warnings: []string{err.Error()}})
+		errString := err.Error()
+		return exit(&plugin.Response{Error: &errString})
 	}
 	contents, err := g.generate()
 	if err != nil {
-		return exit(&plugin.Response{Warnings: []string{err.Error()}})
+		errString := err.Error()
+		return exit(&plugin.Response{Error: &errString})
 	}
 
 	warnings = append(warnings, g.warnings...)
