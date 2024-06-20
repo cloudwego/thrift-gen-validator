@@ -53,11 +53,13 @@ func HandleRequest(req *plugin.Request) *plugin.Response {
 
 	g, err := newGenerator(req)
 	if err != nil {
-		return &plugin.Response{Warnings: []string{err.Error()}}
+		errString := err.Error()
+		return &plugin.Response{Error: &errString}
 	}
 	contents, err := g.generate()
 	if err != nil {
-		return &plugin.Response{Warnings: []string{err.Error()}}
+		errString := err.Error()
+		return &plugin.Response{Error: &errString}
 	}
 
 	warnings = append(warnings, g.warnings...)
