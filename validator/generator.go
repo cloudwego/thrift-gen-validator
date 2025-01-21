@@ -116,7 +116,16 @@ func (g *generator) unindent() {
 func (g *generator) generate() ([]*plugin.Generated, error) {
 	var ret []*plugin.Generated
 	// generate file header
-	for ast := range g.request.AST.DepthFirstSearch() {
+	var trees chan *tp.Thrift
+	if g.request.Recursive {
+		trees = g.request.AST.DepthFirstSearch()
+	} else {
+		trees = make(chan *tp.Thrift, 1)
+		trees <- g.request.AST
+		close(trees)
+	}
+
+	for ast := range trees {
 		g.buffer.Reset()
 		g.enumImport = g.enumImport[:0]
 		scope, _, err := golang.BuildRefScope(g.utils, ast)
