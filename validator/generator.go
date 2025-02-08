@@ -683,7 +683,7 @@ func (g *generator) generateBinaryValidation(vc *ValidateContext) error {
 					g.writeLine(source + " := []byte(\"" + vt.TypedValue.Binary + "\")")
 				}
 			}
-		case parser.MinSize, parser.MaxSize:
+		case parser.MinSize, parser.MaxSize, parser.MinRuneSize, parser.MaxRuneSize:
 			vt := rule.Specified
 			switch vt.ValueType {
 			case parser.FieldReferenceValue:
@@ -716,6 +716,18 @@ func (g *generator) generateBinaryValidation(vc *ValidateContext) error {
 			g.writeLinef("if len(%s) > int(%s) {\n", target, source)
 			g.indent()
 			g.writeLinef("return fmt.Errorf(\"field %s max_len rule failed, current value: %%d\", len(%s))\n", vc.FieldName, target)
+			g.unindent()
+			g.writeLine("}")
+		case parser.MinRuneSize:
+			g.writeLinef("if len([]rune(%s)) < int(%s) {\n", target, source)
+			g.indent()
+			g.writeLinef("return fmt.Errorf(\"field %s min_rune_size rule failed, current value: %%d\", len([]rune(%s)))\n", vc.FieldName, target)
+			g.unindent()
+			g.writeLine("}")
+		case parser.MaxRuneSize:
+			g.writeLinef("if len([]rune(%s)) > int(%s) {\n", target, source)
+			g.indent()
+			g.writeLinef("return fmt.Errorf(\"field %s max_rune_size rule failed, current value: %%d\", len([]rune(%s)))\n", vc.FieldName, target)
 			g.unindent()
 			g.writeLine("}")
 		case parser.Const:
@@ -906,7 +918,7 @@ func (g *generator) generateMapValidation(vc *ValidateContext) error {
 	}
 	for _, rule := range vc.Rules {
 		switch rule.Key {
-		case parser.MinSize, parser.MaxSize:
+		case parser.MinSize, parser.MaxSize, parser.MinRuneSize, parser.MaxRuneSize:
 			vt := rule.Specified
 			switch vt.ValueType {
 			case parser.IntValue:
@@ -943,6 +955,18 @@ func (g *generator) generateMapValidation(vc *ValidateContext) error {
 			g.writeLinef("if len(%s) > int(%s) {\n", target, source)
 			g.indent()
 			g.writeLinef("return fmt.Errorf(\"field %s max_size rule failed, current value: %%v\", %s)\n", vc.FieldName, target)
+			g.unindent()
+			g.writeLine("}")
+		case parser.MinRuneSize:
+			g.writeLinef("if len([]rune(%s)) < int(%s) {\n", target, source)
+			g.indent()
+			g.writeLinef("return fmt.Errorf(\"field %s min_rune_size rule failed, current value: %%v\", %s)\n", vc.FieldName, target)
+			g.unindent()
+			g.writeLine("}")
+		case parser.MaxRuneSize:
+			g.writeLinef("if len([]rune(%s)) > int(%s) {\n", target, source)
+			g.indent()
+			g.writeLinef("return fmt.Errorf(\"field %s max_rune_size rule failed, current value: %%v\", %s)\n", vc.FieldName, target)
 			g.unindent()
 			g.writeLine("}")
 		case parser.NoSparse:

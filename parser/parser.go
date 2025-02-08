@@ -362,8 +362,7 @@ func (p *Parser) parseBinary(st *tp.StructLike, annotations []*tp.Annotation) (*
 						ValueType:  BinaryValue,
 						TypedValue: TypedValidationValue{Binary: annoVal},
 					}
-				case MinSize,
-					MaxSize:
+				case MinSize, MaxSize, MinRuneSize, MaxRuneSize:
 					len, err := strconv.ParseInt(annoVal, 0, 64)
 					if err != nil {
 						return nil, err
@@ -504,7 +503,7 @@ func (p *Parser) parseMap(st *tp.StructLike, keyType, valType *tp.Type, annotati
 			}
 			if value == nil {
 				switch nodeKey {
-				case MinSize, MaxSize:
+				case MinSize, MaxSize, MinRuneSize, MaxRuneSize:
 					len, err := strconv.ParseInt(annoVal, 0, 64)
 					if err != nil {
 						return nil, err

@@ -81,16 +81,18 @@ prefix `vt`, short for "validation"
 
 ### String/Binary
 
-| Rule            |                                  |
-| --------------- | -------------------------------- |
-| vt.const        | must be specified value          |
-| vt.pattern      | regexp pattern                   |
-| vt.prefix       | prefix must be specified value   |
-| vt.suffix       | suffix must be specified value   |
-| vt.contains     | must contain specified value     |
-| vt.not_contains | must not contain specified value |
-| vt.min_size     | min size                         |
-| vt.max_size     | max size                         |
+| Rule             |                                  |
+|------------------|----------------------------------|
+| vt.const         | must be specified value          |
+| vt.pattern       | regexp pattern                   |
+| vt.prefix        | prefix must be specified value   |
+| vt.suffix        | suffix must be specified value   |
+| vt.contains      | must contain specified value     |
+| vt.not_contains  | must not contain specified value |
+| vt.min_size      | min size                         |
+| vt.max_size      | max size                         |
+| vt.max_rune_size | max rune size                    |
+| vt.min_rune_size | min rune size                    |
 
 ### Enum
 

@@ -49,6 +49,8 @@ const (
 	Skip
 	Assert
 	_max_key
+	MinRuneSize
+	MaxRuneSize
 )
 
 var KeyString = [...]string{
@@ -74,6 +76,8 @@ var KeyString = [...]string{
 	NoSparse:    "no_sparse",
 	Skip:        "skip",
 	Assert:      "assert",
+	MaxRuneSize: "max_rune_size",
+	MinRuneSize: "min_rune_size",
 }
 
 func (k Key) String() (string, bool) {
@@ -119,6 +123,8 @@ var (
 		In,
 		NotIn,
 		NotNil,
+		MinRuneSize,
+		MaxRuneSize,
 	}
 	BoolKeys = []Key{
 		Const,
@@ -142,6 +148,8 @@ var (
 		NoSparse,
 		MapKey,
 		MapValue,
+		MinRuneSize,
+		MaxRuneSize,
 	}
 	StructLikeFieldKeys = []Key{
 		Skip,
