@@ -3,80 +3,14 @@
 package test
 
 import (
-	"database/sql"
-	"database/sql/driver"
 	"fmt"
 	"github.com/apache/thrift/lib/go/thrift"
 )
 
-type MapKey int64
-
-const (
-	MapKey_A MapKey = 0
-	MapKey_B MapKey = 1
-	MapKey_C MapKey = 2
-	MapKey_D MapKey = 3
-	MapKey_E MapKey = 4
-	MapKey_F MapKey = 5
-)
-
-func (p MapKey) String() string {
-	switch p {
-	case MapKey_A:
-		return "A"
-	case MapKey_B:
-		return "B"
-	case MapKey_C:
-		return "C"
-	case MapKey_D:
-		return "D"
-	case MapKey_E:
-		return "E"
-	case MapKey_F:
-		return "F"
-	}
-	return "<UNSET>"
-}
-
-func MapKeyFromString(s string) (MapKey, error) {
-	switch s {
-	case "A":
-		return MapKey_A, nil
-	case "B":
-		return MapKey_B, nil
-	case "C":
-		return MapKey_C, nil
-	case "D":
-		return MapKey_D, nil
-	case "E":
-		return MapKey_E, nil
-	case "F":
-		return MapKey_F, nil
-	}
-	return MapKey(0), fmt.Errorf("not a valid MapKey string")
-}
-
-func MapKeyPtr(v MapKey) *MapKey { return &v }
-func (p *MapKey) Scan(value interface{}) (err error) {
-	var result sql.NullInt64
-	err = result.Scan(value)
-	*p = MapKey(result.Int64)
-	return
-}
-
-func (p *MapKey) Value() (driver.Value, error) {
-	if p == nil {
-		return nil, nil
-	}
-	return int64(*p), nil
-}
-
 type Example struct {
-	Message    string            `thrift:"Message,1" json:"Message"`
-	ID         int32             `thrift:"ID,2" json:"ID"`
-	Values     []float64         `thrift:"Values,3" json:"Values"`
-	KeyValues  map[MapKey]string `thrift:"KeyValues,4" json:"KeyValues"`
-	KeyValues2 map[string]string `thrift:"KeyValues2,5" json:"KeyValues2"`
+	MaxRuneString string            `thrift:"MaxRuneString,1" json:"MaxRuneString"`
+	MinRuneString string            `thrift:"MinRuneString,2" json:"MinRuneString"`
+	KeyValues     map[string]string `thrift:"KeyValues,3" json:"KeyValues"`
 }
 
 func NewExample() *Example {
@@ -86,32 +20,22 @@ func NewExample() *Example {
 func (p *Example) InitDefault() {
 }
 
-func (p *Example) GetMessage() (v string) {
-	return p.Message
+func (p *Example) GetMaxRuneString() (v string) {
+	return p.MaxRuneString
 }
 
-func (p *Example) GetID() (v int32) {
-	return p.ID
+func (p *Example) GetMinRuneString() (v string) {
+	return p.MinRuneString
 }
 
-func (p *Example) GetValues() (v []float64) {
-	return p.Values
-}
-
-func (p *Example) GetKeyValues() (v map[MapKey]string) {
+func (p *Example) GetKeyValues() (v map[string]string) {
 	return p.KeyValues
 }
 
-func (p *Example) GetKeyValues2() (v map[string]string) {
-	return p.KeyValues2
-}
-
 var fieldIDToName_Example = map[int16]string{
-	1: "Message",
-	2: "ID",
-	3: "Values",
-	4: "KeyValues",
-	5: "KeyValues2",
+	1: "MaxRuneString",
+	2: "MinRuneString",
+	3: "KeyValues",
 }
 
 func (p *Example) Read(iprot thrift.TProtocol) (err error) {
@@ -142,7 +66,7 @@ func (p *Example) Read(iprot thrift.TProtocol) (err error) {
 				goto SkipFieldError
 			}
 		case 2:
-			if fieldTypeId == thrift.I32 {
+			if fieldTypeId == thrift.STRING {
 				if err = p.ReadField2(iprot); err != nil {
 					goto ReadFieldError
 				}
@@ -150,24 +74,8 @@ func (p *Example) Read(iprot thrift.TProtocol) (err error) {
 				goto SkipFieldError
 			}
 		case 3:
-			if fieldTypeId == thrift.LIST {
+			if fieldTypeId == thrift.MAP {
 				if err = p.ReadField3(iprot); err != nil {
-					goto ReadFieldError
-				}
-			} else if err = iprot.Skip(fieldTypeId); err != nil {
-				goto SkipFieldError
-			}
-		case 4:
-			if fieldTypeId == thrift.MAP {
-				if err = p.ReadField4(iprot); err != nil {
-					goto ReadFieldError
-				}
-			} else if err = iprot.Skip(fieldTypeId); err != nil {
-				goto SkipFieldError
-			}
-		case 5:
-			if fieldTypeId == thrift.MAP {
-				if err = p.ReadField5(iprot); err != nil {
 					goto ReadFieldError
 				}
 			} else if err = iprot.Skip(fieldTypeId); err != nil {
@@ -210,73 +118,21 @@ func (p *Example) ReadField1(iprot thrift.TProtocol) error {
 	} else {
 		_field = v
 	}
-	p.Message = _field
+	p.MaxRuneString = _field
 	return nil
 }
 func (p *Example) ReadField2(iprot thrift.TProtocol) error {
 
-	var _field int32
-	if v, err := iprot.ReadI32(); err != nil {
+	var _field string
+	if v, err := iprot.ReadString(); err != nil {
 		return err
 	} else {
 		_field = v
 	}
-	p.ID = _field
+	p.MinRuneString = _field
 	return nil
 }
 func (p *Example) ReadField3(iprot thrift.TProtocol) error {
-	_, size, err := iprot.ReadListBegin()
-	if err != nil {
-		return err
-	}
-	_field := make([]float64, 0, size)
-	for i := 0; i < size; i++ {
-
-		var _elem float64
-		if v, err := iprot.ReadDouble(); err != nil {
-			return err
-		} else {
-			_elem = v
-		}
-
-		_field = append(_field, _elem)
-	}
-	if err := iprot.ReadListEnd(); err != nil {
-		return err
-	}
-	p.Values = _field
-	return nil
-}
-func (p *Example) ReadField4(iprot thrift.TProtocol) error {
-	_, _, size, err := iprot.ReadMapBegin()
-	if err != nil {
-		return err
-	}
-	_field := make(map[MapKey]string, size)
-	for i := 0; i < size; i++ {
-		var _key MapKey
-		if v, err := iprot.ReadI32(); err != nil {
-			return err
-		} else {
-			_key = MapKey(v)
-		}
-
-		var _val string
-		if v, err := iprot.ReadString(); err != nil {
-			return err
-		} else {
-			_val = v
-		}
-
-		_field[_key] = _val
-	}
-	if err := iprot.ReadMapEnd(); err != nil {
-		return err
-	}
-	p.KeyValues = _field
-	return nil
-}
-func (p *Example) ReadField5(iprot thrift.TProtocol) error {
 	_, _, size, err := iprot.ReadMapBegin()
 	if err != nil {
 		return err
@@ -302,7 +158,7 @@ func (p *Example) ReadField5(iprot thrift.TProtocol) error {
 	if err := iprot.ReadMapEnd(); err != nil {
 		return err
 	}
-	p.KeyValues2 = _field
+	p.KeyValues = _field
 	return nil
 }
 
@@ -325,14 +181,6 @@ func (p *Example) Write(oprot thrift.TProtocol) (err error) {
 			fieldId = 3
 			goto WriteFieldError
 		}
-		if err = p.writeField4(oprot); err != nil {
-			fieldId = 4
-			goto WriteFieldError
-		}
-		if err = p.writeField5(oprot); err != nil {
-			fieldId = 5
-			goto WriteFieldError
-		}
 	}
 	if err = oprot.WriteFieldStop(); err != nil {
 		goto WriteFieldStopError
@@ -352,10 +200,10 @@ WriteStructEndError:
 }
 
 func (p *Example) writeField1(oprot thrift.TProtocol) (err error) {
-	if err = oprot.WriteFieldBegin("Message", thrift.STRING, 1); err != nil {
+	if err = oprot.WriteFieldBegin("MaxRuneString", thrift.STRING, 1); err != nil {
 		goto WriteFieldBeginError
 	}
-	if err := oprot.WriteString(p.Message); err != nil {
+	if err := oprot.WriteString(p.MaxRuneString); err != nil {
 		return err
 	}
 	if err = oprot.WriteFieldEnd(); err != nil {
@@ -369,10 +217,10 @@ WriteFieldEndError:
 }
 
 func (p *Example) writeField2(oprot thrift.TProtocol) (err error) {
-	if err = oprot.WriteFieldBegin("ID", thrift.I32, 2); err != nil {
+	if err = oprot.WriteFieldBegin("MinRuneString", thrift.STRING, 2); err != nil {
 		goto WriteFieldBeginError
 	}
-	if err := oprot.WriteI32(p.ID); err != nil {
+	if err := oprot.WriteString(p.MinRuneString); err != nil {
 		return err
 	}
 	if err = oprot.WriteFieldEnd(); err != nil {
@@ -386,66 +234,13 @@ WriteFieldEndError:
 }
 
 func (p *Example) writeField3(oprot thrift.TProtocol) (err error) {
-	if err = oprot.WriteFieldBegin("Values", thrift.LIST, 3); err != nil {
+	if err = oprot.WriteFieldBegin("KeyValues", thrift.MAP, 3); err != nil {
 		goto WriteFieldBeginError
 	}
-	if err := oprot.WriteListBegin(thrift.DOUBLE, len(p.Values)); err != nil {
-		return err
-	}
-	for _, v := range p.Values {
-		if err := oprot.WriteDouble(v); err != nil {
-			return err
-		}
-	}
-	if err := oprot.WriteListEnd(); err != nil {
-		return err
-	}
-	if err = oprot.WriteFieldEnd(); err != nil {
-		goto WriteFieldEndError
-	}
-	return nil
-WriteFieldBeginError:
-	return thrift.PrependError(fmt.Sprintf("%T write field 3 begin error: ", p), err)
-WriteFieldEndError:
-	return thrift.PrependError(fmt.Sprintf("%T write field 3 end error: ", p), err)
-}
-
-func (p *Example) writeField4(oprot thrift.TProtocol) (err error) {
-	if err = oprot.WriteFieldBegin("KeyValues", thrift.MAP, 4); err != nil {
-		goto WriteFieldBeginError
-	}
-	if err := oprot.WriteMapBegin(thrift.I32, thrift.STRING, len(p.KeyValues)); err != nil {
+	if err := oprot.WriteMapBegin(thrift.STRING, thrift.STRING, len(p.KeyValues)); err != nil {
 		return err
 	}
 	for k, v := range p.KeyValues {
-		if err := oprot.WriteI32(int32(k)); err != nil {
-			return err
-		}
-		if err := oprot.WriteString(v); err != nil {
-			return err
-		}
-	}
-	if err := oprot.WriteMapEnd(); err != nil {
-		return err
-	}
-	if err = oprot.WriteFieldEnd(); err != nil {
-		goto WriteFieldEndError
-	}
-	return nil
-WriteFieldBeginError:
-	return thrift.PrependError(fmt.Sprintf("%T write field 4 begin error: ", p), err)
-WriteFieldEndError:
-	return thrift.PrependError(fmt.Sprintf("%T write field 4 end error: ", p), err)
-}
-
-func (p *Example) writeField5(oprot thrift.TProtocol) (err error) {
-	if err = oprot.WriteFieldBegin("KeyValues2", thrift.MAP, 5); err != nil {
-		goto WriteFieldBeginError
-	}
-	if err := oprot.WriteMapBegin(thrift.STRING, thrift.STRING, len(p.KeyValues2)); err != nil {
-		return err
-	}
-	for k, v := range p.KeyValues2 {
 		if err := oprot.WriteString(k); err != nil {
 			return err
 		}
@@ -461,9 +256,9 @@ func (p *Example) writeField5(oprot thrift.TProtocol) (err error) {
 	}
 	return nil
 WriteFieldBeginError:
-	return thrift.PrependError(fmt.Sprintf("%T write field 5 begin error: ", p), err)
+	return thrift.PrependError(fmt.Sprintf("%T write field 3 begin error: ", p), err)
 WriteFieldEndError:
-	return thrift.PrependError(fmt.Sprintf("%T write field 5 end error: ", p), err)
+	return thrift.PrependError(fmt.Sprintf("%T write field 3 end error: ", p), err)
 }
 
 func (p *Example) String() string {

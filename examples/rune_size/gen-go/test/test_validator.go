@@ -22,27 +22,13 @@ var (
 )
 
 func (p *Example) IsValid() error {
-	if len([]rune(p.Message)) > int(20) {
-		return fmt.Errorf("field Message max_rune_size rule failed, current value: %d", len([]rune(p.Message)))
+	if len([]rune(p.MaxRuneString)) > int(10) {
+		return fmt.Errorf("field MaxRuneString max_rune_size rule failed, current value: %d", len([]rune(p.MaxRuneString)))
 	}
-	if len([]rune(p.Message)) < int(20) {
-		return fmt.Errorf("field Message min_rune_size rule failed, current value: %d", len([]rune(p.Message)))
-	}
-	if p.ID < int32(10000) {
-		return fmt.Errorf("field ID ge rule failed, current value: %v", p.ID)
-	}
-	for i := 0; i < len(p.Values); i++ {
-		_elem := p.Values[i]
-		if _elem <= float64(0.25) {
-			return fmt.Errorf("field _elem gt rule failed, current value: %v", _elem)
-		}
+	if len([]rune(p.MinRuneString)) < int(10) {
+		return fmt.Errorf("field MinRuneString min_rune_size rule failed, current value: %d", len([]rune(p.MinRuneString)))
 	}
 	for k := range p.KeyValues {
-		if k.String() == "<UNSET>" {
-			return fmt.Errorf("field k defined_only rule failed")
-		}
-	}
-	for k := range p.KeyValues2 {
 		if len([]rune(k)) > int(10) {
 			return fmt.Errorf("field k max_rune_size rule failed, current value: %d", len([]rune(k)))
 		}
