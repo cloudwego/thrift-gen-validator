@@ -48,9 +48,9 @@ const (
 	NoSparse
 	Skip
 	Assert
-	_max_key
 	MinRuneSize
 	MaxRuneSize
+	_max_key
 )
 
 var KeyString = [...]string{
